@@ -1,0 +1,666 @@
+{
+  "name": "star16-v2",
+  "grid_size": 4,
+  "marker_count": 18,
+  "minimum_d4_hamming_distance": 3,
+  "max_correctable_bits": 1,
+  "double_bit_rejection_guaranteed": false,
+  "legacy_compatible_ids": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9
+  ],
+  "anchors_rc": [
+    [
+      0,
+      0
+    ],
+    [
+      0,
+      3
+    ],
+    [
+      3,
+      3
+    ],
+    [
+      3,
+      0
+    ]
+  ],
+  "payload_order_rc": [
+    [
+      0,
+      1
+    ],
+    [
+      0,
+      2
+    ],
+    [
+      1,
+      0
+    ],
+    [
+      1,
+      1
+    ],
+    [
+      1,
+      2
+    ],
+    [
+      1,
+      3
+    ],
+    [
+      2,
+      0
+    ],
+    [
+      2,
+      1
+    ],
+    [
+      2,
+      2
+    ],
+    [
+      2,
+      3
+    ],
+    [
+      3,
+      1
+    ],
+    [
+      3,
+      2
+    ]
+  ],
+  "axis_convention": "origin=center of board; +X=right, +Y=down, +Z=into board; canonical print viewed from front",
+  "markers": [
+    {
+      "id": 1,
+      "code_hex": "7A8",
+      "grid": [
+        [
+          1,
+          0,
+          0,
+          1
+        ],
+        [
+          0,
+          1,
+          0,
+          1
+        ],
+        [
+          0,
+          1,
+          1,
+          1
+        ],
+        [
+          1,
+          1,
+          0,
+          1
+        ]
+      ],
+      "dot_count": 10,
+      "canonical_direction_deg": 0
+    },
+    {
+      "id": 2,
+      "code_hex": "AD1",
+      "grid": [
+        [
+          1,
+          1,
+          0,
+          1
+        ],
+        [
+          0,
+          0,
+          1,
+          0
+        ],
+        [
+          1,
+          1,
+          0,
+          1
+        ],
+        [
+          1,
+          0,
+          1,
+          1
+        ]
+      ],
+      "dot_count": 10,
+      "canonical_direction_deg": 0
+    },
+    {
+      "id": 3,
+      "code_hex": "674",
+      "grid": [
+        [
+          1,
+          0,
+          0,
+          1
+        ],
+        [
+          1,
+          0,
+          1,
+          1
+        ],
+        [
+          1,
+          0,
+          0,
+          1
+        ],
+        [
+          1,
+          1,
+          0,
+          1
+        ]
+      ],
+      "dot_count": 10,
+      "canonical_direction_deg": 0
+    },
+    {
+      "id": 4,
+      "code_hex": "3CC",
+      "grid": [
+        [
+          1,
+          0,
+          0,
+          1
+        ],
+        [
+          1,
+          1,
+          0,
+          0
+        ],
+        [
+          1,
+          1,
+          1,
+          1
+        ],
+        [
+          1,
+          0,
+          0,
+          1
+        ]
+      ],
+      "dot_count": 10,
+      "canonical_direction_deg": 0
+    },
+    {
+      "id": 5,
+      "code_hex": "533",
+      "grid": [
+        [
+          1,
+          1,
+          1,
+          1
+        ],
+        [
+          0,
+          0,
+          1,
+          1
+        ],
+        [
+          0,
+          0,
+          1,
+          0
+        ],
+        [
+          1,
+          1,
+          0,
+          1
+        ]
+      ],
+      "dot_count": 10,
+      "canonical_direction_deg": 0
+    },
+    {
+      "id": 6,
+      "code_hex": "FE1",
+      "grid": [
+        [
+          1,
+          1,
+          0,
+          1
+        ],
+        [
+          0,
+          0,
+          0,
+          1
+        ],
+        [
+          1,
+          1,
+          1,
+          1
+        ],
+        [
+          1,
+          1,
+          1,
+          1
+        ]
+      ],
+      "dot_count": 12,
+      "canonical_direction_deg": 0
+    },
+    {
+      "id": 7,
+      "code_hex": "AEB",
+      "grid": [
+        [
+          1,
+          1,
+          1,
+          1
+        ],
+        [
+          0,
+          1,
+          0,
+          1
+        ],
+        [
+          1,
+          1,
+          0,
+          1
+        ],
+        [
+          1,
+          0,
+          1,
+          1
+        ]
+      ],
+      "dot_count": 12,
+      "canonical_direction_deg": 0
+    },
+    {
+      "id": 8,
+      "code_hex": "CF0",
+      "grid": [
+        [
+          1,
+          0,
+          0,
+          1
+        ],
+        [
+          0,
+          0,
+          1,
+          1
+        ],
+        [
+          1,
+          1,
+          0,
+          0
+        ],
+        [
+          1,
+          1,
+          1,
+          1
+        ]
+      ],
+      "dot_count": 10,
+      "canonical_direction_deg": 0
+    },
+    {
+      "id": 9,
+      "code_hex": "6D8",
+      "grid": [
+        [
+          1,
+          0,
+          0,
+          1
+        ],
+        [
+          0,
+          1,
+          1,
+          0
+        ],
+        [
+          1,
+          1,
+          0,
+          1
+        ],
+        [
+          1,
+          1,
+          0,
+          1
+        ]
+      ],
+      "dot_count": 10,
+      "canonical_direction_deg": 0
+    },
+    {
+      "id": 10,
+      "code_hex": "017",
+      "grid": [
+        [
+          1,
+          1,
+          1,
+          1
+        ],
+        [
+          1,
+          0,
+          1,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          1,
+          0,
+          0,
+          1
+        ]
+      ],
+      "dot_count": 8,
+      "canonical_direction_deg": 0
+    },
+    {
+      "id": 11,
+      "code_hex": "1F5",
+      "grid": [
+        [
+          1,
+          1,
+          0,
+          1
+        ],
+        [
+          1,
+          0,
+          1,
+          1
+        ],
+        [
+          1,
+          1,
+          1,
+          0
+        ],
+        [
+          1,
+          0,
+          0,
+          1
+        ]
+      ],
+      "dot_count": 11,
+      "canonical_direction_deg": 0
+    },
+    {
+      "id": 12,
+      "code_hex": "0EF",
+      "grid": [
+        [
+          1,
+          1,
+          1,
+          1
+        ],
+        [
+          1,
+          1,
+          0,
+          1
+        ],
+        [
+          1,
+          1,
+          0,
+          0
+        ],
+        [
+          1,
+          0,
+          0,
+          1
+        ]
+      ],
+      "dot_count": 11,
+      "canonical_direction_deg": 0
+    },
+    {
+      "id": 13,
+      "code_hex": "17B",
+      "grid": [
+        [
+          1,
+          1,
+          1,
+          1
+        ],
+        [
+          0,
+          1,
+          1,
+          1
+        ],
+        [
+          1,
+          0,
+          1,
+          0
+        ],
+        [
+          1,
+          0,
+          0,
+          1
+        ]
+      ],
+      "dot_count": 11,
+      "canonical_direction_deg": 0
+    },
+    {
+      "id": 14,
+      "code_hex": "3D6",
+      "grid": [
+        [
+          1,
+          0,
+          1,
+          1
+        ],
+        [
+          1,
+          0,
+          1,
+          0
+        ],
+        [
+          1,
+          1,
+          1,
+          1
+        ],
+        [
+          1,
+          0,
+          0,
+          1
+        ]
+      ],
+      "dot_count": 11,
+      "canonical_direction_deg": 0
+    },
+    {
+      "id": 15,
+      "code_hex": "1E2",
+      "grid": [
+        [
+          1,
+          0,
+          1,
+          1
+        ],
+        [
+          0,
+          0,
+          0,
+          1
+        ],
+        [
+          1,
+          1,
+          1,
+          0
+        ],
+        [
+          1,
+          0,
+          0,
+          1
+        ]
+      ],
+      "dot_count": 9,
+      "canonical_direction_deg": 0
+    },
+    {
+      "id": 16,
+      "code_hex": "076",
+      "grid": [
+        [
+          1,
+          0,
+          1,
+          1
+        ],
+        [
+          1,
+          0,
+          1,
+          1
+        ],
+        [
+          1,
+          0,
+          0,
+          0
+        ],
+        [
+          1,
+          0,
+          0,
+          1
+        ]
+      ],
+      "dot_count": 9,
+      "canonical_direction_deg": 0
+    },
+    {
+      "id": 17,
+      "code_hex": "2CA",
+      "grid": [
+        [
+          1,
+          0,
+          1,
+          1
+        ],
+        [
+          0,
+          1,
+          0,
+          0
+        ],
+        [
+          1,
+          1,
+          0,
+          1
+        ],
+        [
+          1,
+          0,
+          0,
+          1
+        ]
+      ],
+      "dot_count": 9,
+      "canonical_direction_deg": 0
+    },
+    {
+      "id": 18,
+      "code_hex": "00E",
+      "grid": [
+        [
+          1,
+          0,
+          1,
+          1
+        ],
+        [
+          1,
+          1,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          1,
+          0,
+          0,
+          1
+        ]
+      ],
+      "dot_count": 7,
+      "canonical_direction_deg": 0
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "spacing_mm": 40.0,
+  "dot_diameter_mm": 20.0,
+  "threshold_mode": "fixed",
+  "threshold": 235,
+  "min_area": 80.0,
+  "max_area": 3000.0,
+  "min_circularity": 0.5,
+  "blur_size": 3,
+  "max_hamming": 1,
+  "grid_tolerance": 0.23,
+  "max_reprojection_error_px": 2.5,
+  "max_blobs": 96,
+  "max_markers": 8
+}
