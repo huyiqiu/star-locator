@@ -293,8 +293,13 @@ def detect(image, cfg: DetectorConfig, intrinsics: Intrinsics | None = None):
             obj = np.array([[(c-1.5)*cfg.spacing_mm, (r-1.5)*cfg.spacing_mm, 0] for ((r, c), i) in pairs], np.float64)
             img_raw = np.array([raw[i] for _, i in pairs], np.float64)
             pose = None
+            approximate = False
             if K is not None and intrinsics.calibrated:
-                pose = _pose(obj, img_raw, K, dist, cfg.max_reprojection_error_px)
+                exact_complete = distances[best] == 0 and len(pairs) == int(np.sum(expected))
+                pose_limit = max(cfg.max_reprojection_error_px, cfg.edge_pose_max_reprojection_error_px) if exact_complete else cfg.max_reprojection_error_px
+                pose = _pose(obj, img_raw, K, dist, pose_limit)
+                if pose and pose['reprojection_rms_px'] > cfg.max_reprojection_error_px:
+                    approximate = True
             code_error = distances[best]
             quality = float(np.clip((1-code_error*.18)*np.exp(-fit_rms/3), 0, 1))
             if pose and pose['ambiguous']:
@@ -307,7 +312,7 @@ def detect(image, cfg: DetectorConfig, intrinsics: Intrinsics | None = None):
                             'center_px': corners_raw.mean(axis=0).tolist(),
                             'dot_indices': ids, 'image_points_px': img_raw.tolist(),
                             'cells_rc': [list(rc) for rc, _ in pairs],
-                            'pose': pose, 'pose_status': ('ambiguous' if pose and pose['ambiguous'] else 'valid' if pose else 'reprojection_rejected' if K is not None and intrinsics.calibrated else 'calibration_required')})
+                            'pose': pose, 'pose_status': ('ambiguous' if pose and pose['ambiguous'] else 'approximate' if pose and approximate else 'valid' if pose else 'reprojection_rejected' if K is not None and intrinsics.calibrated else 'calibration_required')})
     # A partial quad can explain a subset of a larger real marker with a lower
     # fit error. Prefer the complete code before comparing fit residuals.
     matches.sort(key=lambda m: (m['hamming_distance'], -len(m['dot_indices']), m['grid_rms_px']))

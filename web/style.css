@@ -13,3 +13,7 @@
 .map-advanced>summary{color:#95aab4;font-size:10px}
 .map-advanced .map-editor{margin-top:12px}
 @media(max-width:560px){.map-actions .helper{flex-basis:100%}.world-metric .metric-value{font-size:21px}}
+
+/* The application name is wider than the marker-family label. */
+.brand-name{font-size:16px;letter-spacing:-.6px;white-space:nowrap}
+@media (min-width:1021px) and (max-width:1200px){.brand{gap:5px}.brand-name{font-size:12px;letter-spacing:-.4px}}

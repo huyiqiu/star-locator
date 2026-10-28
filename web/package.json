@@ -1,1 +1,1 @@
-{"name":"star16-workbench","private":true,"type":"module","scripts":{"check":"node --check app.js && node --check calibration.js"}}
+{"name":"star-locator","private":true,"type":"module","scripts":{"check":"node --check app.js && node --check calibration.js && node --check temporal.js"}}

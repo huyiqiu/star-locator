@@ -11,8 +11,9 @@ def as_upload(frame):
 
 
 def test_health_static_and_openapi(client):
-    assert client.get('/api/health').json()['version']=='1.6.1'
-    assert '星阵定位工作台' in client.get('/').text
+    assert client.get('/api/health').json()['version']=='1.6.2'
+    assert '<title>star-locator · 红外星阵定位</title>' in client.get('/').text
+    assert client.get('/openapi.json').json()['info']['title']=='star-locator API'
     assert client.get('/assets/app.js').status_code==200
     assert '/api/detect' in client.get('/openapi.json').json()['paths']
     assert client.get('/api/family').json()['minimum_d4_hamming_distance']==3

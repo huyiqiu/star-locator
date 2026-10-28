@@ -135,7 +135,7 @@ async def lifespan(app):
     except ValueError:
         pass
 
-app = FastAPI(title='Star16 星阵定位 API', version='1.6.1', lifespan=lifespan,
+app = FastAPI(title='star-locator API', version='1.6.2', lifespan=lifespan,
               description='本机红外反射点阵检测 / ID / 方向 / 平面 PnP。毫米单位；不兼容论文与厂商 ID。')
 # Same-origin by default. Optional explicit origins support a separately hosted UI.
 origins = [x.strip() for x in os.environ.get('STAR16_CORS_ORIGINS','').split(',') if x.strip()]
@@ -144,7 +144,7 @@ if origins:
 
 @app.get('/api/health')
 def health():
-    return {'status':'ok', 'version':'1.6.1', 'opencv':cv2.__version__, 'family':FAMILY_NAME, 'camera':camera.status()}
+    return {'status':'ok', 'version':'1.6.2', 'opencv':cv2.__version__, 'family':FAMILY_NAME, 'camera':camera.status()}
 
 @app.get('/api/family')
 def get_family():
@@ -465,7 +465,7 @@ def chessboard_svg(columns:int=9,rows:int=6,square_mm:float=25):
     pad=square_mm
     rects=''.join(f'<rect x="{pad+c*square_mm}" y="{pad+r*square_mm}" width="{square_mm}" height="{square_mm}"/>' for r in range(rows+1) for c in range(columns+1) if (r+c)%2==0)
     svg=f'<svg xmlns="http://www.w3.org/2000/svg" width="{sw+2*pad}mm" height="{sh+2*pad}mm" viewBox="0 0 {sw+2*pad} {sh+2*pad}"><rect width="100%" height="100%" fill="white"/>{rects}</svg>'
-    return Response(svg,media_type='image/svg+xml',headers={'Content-Disposition':'attachment; filename="star16-chessboard.svg"'})
+    return Response(svg,media_type='image/svg+xml',headers={'Content-Disposition':'attachment; filename="star-locator-chessboard.svg"'})
 
 app.mount('/assets',StaticFiles(directory=ROOT/'web'),name='assets')
 

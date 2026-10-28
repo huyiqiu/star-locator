@@ -1,5 +1,5 @@
-import {createCalibrationUI} from '/assets/calibration.js?v=1.6.1';
-import {TemporalPoseFilter} from '/assets/temporal.js?v=1.6.1';
+import {createCalibrationUI} from '/assets/calibration.js?v=1.6.2';
+import {TemporalPoseFilter} from '/assets/temporal.js?v=1.6.2';
 const $=id=>document.getElementById(id);
 const state={source:'simulation',mode:'glow',family:null,config:null,map:null,markerPoses:[],result:null,selected:0,selectedId:null,stream:null,ws:null,running:false,session:0,lastLive:0,lastRendered:0,lastFile:null,lastImage:null,receivedAt:0,cameraOwned:false,defaultConfig:null};
 const ctx=$('viewer').getContext('2d');
@@ -68,14 +68,14 @@ function updateObservation(){
  else if(m.pose_status==='calibration_required'){note='ID 与方向已识别。请在“相机标定”中导入真实内参或完成棋盘格标定，厘米位姿随后生效。';warn=true}
  else if(m.pose_status==='ambiguous'){note='当前平面位姿存在两个近似等价解。可增加观察倾角或引入安装姿态、里程计约束，当前结果已标记为歧义。';warn=true}
  else if(m.pose_status==='reprojection_rejected'){note='图案已识别，但位姿没有通过几何质量门限。请检查标定、实际点间距、反光点粘贴位置及曝光。';warn=true}
- else if(m.pose_status==='approximate'){note=`边缘点阵已精确解码，当前坐标为粗略估计（重投影误差 ${pose.reprojection_rms_px.toFixed(1)} px），地图位置可能有较大偏差。建议检查边缘标定。`;warn=true}
+ else if(m.pose_status==='approximate'){note=`点阵已精确解码，当前坐标为粗略估计（重投影误差 ${pose.reprojection_rms_px.toFixed(1)} px），地图位置可能有较大偏差。建议检查标定和点位。`;warn=true}
  else if(m.world_position_status==='geometry_rejected'){note='这帧的 ID 或几何质量未达到地图定位门限：仅精确编码且网格与位姿误差均不超过 2.5 px 时，才输出地图 X/Y。';warn=true}
  else if(!world){note=`已识别 ID ${String(m.id).padStart(3,'0')}，但还没有这个地标的地图位姿。请到“相机标定 → 地标地图”填写标记中心 X/Y/Z 和坐标轴方向。`;warn=true}
  else note=`已根据 ID ${String(m.id).padStart(3,'0')} 的地图位姿，计算相机光心在地图中的 X/Y。若需要机器人中心位置，还需设置相机安装外参。`;
  if(state.result?.warnings?.includes('calibration_aspect_mismatch')){note='当前画面宽高比与标定分辨率不同，已停止位姿输出。请恢复标定时的取景格式或重新标定。';warn=true}
  if(!m&&state.result?.warnings?.includes('undistortion_unstable')){note='画面中的部分点无法用当前畸变参数稳定还原，边缘位置可能无法识别。请先将标记移近画面中心验证，并用覆盖画面边缘的棋盘视图重新标定。';warn=true}
  $('notice-text').textContent=note;$('live-notice').classList.toggle('warn',warn);
- $('frame-note').textContent=state.source==='simulation'?'合成演示 · 独立 3D 投影器 → 真实检测链路':m?`已解码 ${state.result.markers.length} 个标记 · ${pose?'PnP '+poseLabels[m.pose_status]:'等待标定'}`:`亮点调试 · ${state.result?.diagnostics?.blob_count||0} 个候选点 · 尚无有效编码`;
+ $('frame-note').textContent=state.source==='simulation'?'合成演示 · 独立 3D 投影器 → 真实检测链路':m?`已解码 ${state.result.markers.length} 个标记 · ${m.pose_status==='calibration_required'?'等待标定':'PnP '+(poseLabels[m.pose_status]||'未知状态')}`:`亮点调试 · ${state.result?.diagnostics?.blob_count||0} 个候选点 · 尚无有效编码`;
 }
 async function paint(){
  if(!state.result?.images||!$('page-live').classList.contains('active'))return;
@@ -240,8 +240,8 @@ document.querySelectorAll('#view-modes button').forEach(b=>b.onclick=()=>{state.
 document.querySelectorAll('#source-tabs button').forEach(b=>b.onclick=()=>setSource(b.dataset.source).catch(e=>toast(e.message,true)));
 on('show-overlay',paint,'change');on('show-unencoded',()=>{paint();refreshStreamMode()},'change');on('render-sim',renderSimulation);
 on('fullscreen',async()=>{if(document.fullscreenElement)await document.exitFullscreen();else await $('viewport').requestFullscreen()});
-on('capture-frame',()=>{if(!state.result)throw Error('当前没有可保存的图像。');$('viewer').toBlob(blob=>{const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`star16-${state.source}-${Date.now()}.png`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)},'image/png')});
-on('export-result',()=>{if(!state.result)throw Error('当前没有可导出的观测。');const result={...state.result};delete result.images;download(`star16-observation-${Date.now()}.json`,JSON.stringify(result,null,2))});
+on('capture-frame',()=>{if(!state.result)throw Error('当前没有可保存的图像。');$('viewer').toBlob(blob=>{const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`star-locator-${state.source}-${Date.now()}.png`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)},'image/png')});
+on('export-result',()=>{if(!state.result)throw Error('当前没有可导出的观测。');const result={...state.result};delete result.images;download(`star-locator-observation-${Date.now()}.json`,JSON.stringify(result,null,2))});
 on('start-browser',startBrowser);on('refresh-devices',refreshDevices);on('stop-browser',async()=>{await stopCapture();clearObservation('相机已断开');$('source-state').textContent='未连接';$('frame-rate').textContent='未连接'});
 on('start-uvc',startUVC);on('stop-uvc',async()=>{await stopCapture();await api('/api/camera/stop',{method:'POST'});clearObservation('相机已断开');$('source-state').textContent='未连接';$('frame-rate').textContent='未连接'});
 on('refresh-uvc-controls',refreshUvcControls);on('uvc-exposure-mode',()=>setUvcControlAvailability(true),'change');on('uvc-controls-form',applyUvcControls,'submit');on('reset-uvc-controls',resetUvcControls);
@@ -251,7 +251,7 @@ on('config-form',async e=>{e.preventDefault();const response=await api('/api/con
 on('reset-config',()=>{configToForm(state.defaultConfig);$('config-status').textContent='默认值已填入，点击“应用参数”生效。'});
 on('download-family',()=>download('star16-v2-family.json',JSON.stringify(state.family,null,2)));
 on('save-intrinsics',saveIntrinsics);on('intrinsics-file',async e=>{const file=e.target.files[0];if(file){const data=JSON.parse(await file.text());$('intrinsics-json').value=JSON.stringify(data.intrinsics||data,null,2);$('confirm-calibrated').checked=false;toast('已载入文件，请确认来源后保存。')}},'change');
-on('export-intrinsics',()=>{const data=JSON.parse($('intrinsics-json').value);download('star16-camera-intrinsics.json',JSON.stringify(data,null,2))});
+on('export-intrinsics',()=>{const data=JSON.parse($('intrinsics-json').value);download('star-locator-camera-intrinsics.json',JSON.stringify(data,null,2))});
 on('clear-intrinsics',async()=>{await api('/api/intrinsics',{method:'DELETE'});$('confirm-calibrated').checked=false;$('calibration-badge').textContent='尚未标定';toast('已清除内参，真实帧暂停输出厘米位姿。');await reprocess()});
 on('map-marker-id',markerPoseToForm,'change');on('marker-pose-form',saveMarkerPose,'submit');on('remove-marker-pose',removeMarkerPose);
 on('save-map',async()=>{const map=JSON.parse($('map-json').value);state.map=await api('/api/map',{method:'PUT',...jsonOptions(mapLengthUnits(map,false))});$('map-json').value=JSON.stringify(mapLengthUnits(state.map,true),null,2);await refreshMarkerPoses();toast('地标地图与安装外参已保存。');await reprocess()});

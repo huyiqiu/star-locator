@@ -53,6 +53,29 @@ def test_edge_fallback_preserves_exact_id_and_labels_approximate_pose():
     assert len(result['markers'])==2
     assert sum(m.get('geometry_source')=='raw_image' for m in result['markers'])==1
 
+
+def test_exact_marker_with_reprojection_over_normal_limit_is_approximate():
+    # A marker decoded with stable undistortion, reconstructed from a viewer
+    # screenshot: its pose RMS is just above the 5 px normal gate.
+    centers=[(638,410),(536,408),(429,406),(316,404),(434,301),
+             (540,205),(437,198),(329,190),(639,117),(333,87)]
+    frame=np.zeros((720,1280,3),np.uint8)
+    for point in centers:
+        cv2.circle(frame,point,9,(255,255,255),-1)
+    intr=Intrinsics(width=1280,height=720,fx=1347.287911263969,fy=1326.9093747958955,
+                    cx=804.8291471739756,cy=311.30504522071556,
+                    distortion=[.2280408567889303,-5.977149149611263,.0032418995028864676,
+                                .015374902232756706,46.616611363262685],calibrated=True)
+    cfg=DetectorConfig(threshold=235,min_area=25,max_area=3000,min_circularity=.5,
+                       max_hamming=1,max_reprojection_error_px=5,edge_pose_max_reprojection_error_px=20)
+    result,_=detect(frame,cfg,intr)
+    assert 'undistortion_unstable' not in result['warnings']
+    marker=result['markers'][0]
+    assert (marker['id'],marker['hamming_distance'],marker['pose_status'])==(1,0,'approximate')
+    assert 5 < marker['pose']['reprojection_rms_px'] < 20
+    strict,_=detect(frame,cfg.model_copy(update={'edge_pose_max_reprojection_error_px':5}),intr)
+    assert strict['markers'][0]['pose_status']=='reprojection_rejected'
+
 @pytest.mark.parametrize('ident',range(1,len(CODES)+1))
 @pytest.mark.parametrize('yaw',[15,105,-165,-75])
 def test_id_direction_and_pose_all_ids_and_orientations(ident,yaw):
