@@ -133,41 +133,63 @@ def candidate_quads(points):
     return quads[:350]
 
 
+def _refine_pose(obj, img, K, dist, rvec, tvec):
+    try:
+        rvec, tvec = cv2.solvePnPRefineLM(obj, img, K, dist, rvec.copy(), tvec.copy())
+    except cv2.error:
+        return None
+    R = cv2.Rodrigues(rvec)[0]
+    if not np.isfinite(R).all() or not np.isfinite(tvec).all():
+        return None
+    if np.min((R@obj.T+tvec)[2]) <= 0 or R[2, 2] <= 0:
+        return None
+    projected = cv2.projectPoints(obj, rvec, tvec, K, dist)[0].reshape(-1, 2)
+    rms = float(np.sqrt(np.mean(np.sum((projected-img)**2, axis=1))))
+    return (rms, rvec, tvec) if np.isfinite(rms) else None
+
+
 def _pose(obj, img, K, dist, max_error):
     try:
         result = cv2.solvePnPGeneric(obj, img, K, dist, flags=cv2.SOLVEPNP_IPPE)
     except cv2.error:
         return None
-    candidates = []
     if not result[0]:
         return None
+    raw_candidates = []
     for rvec, tvec in zip(result[1], result[2]):
         R = cv2.Rodrigues(rvec)[0]
         if not np.isfinite(R).all() or not np.isfinite(tvec).all():
             continue
         if np.min((R@obj.T+tvec)[2]) <= 0 or R[2, 2] <= 0:
             continue
-        # Evaluate BOTH IPPE minima before refining the selected minimum.
         projected = cv2.projectPoints(obj, rvec, tvec, K, dist)[0].reshape(-1, 2)
         rms = float(np.sqrt(np.mean(np.sum((projected-img)**2, axis=1))))
-        candidates.append((rms, rvec, tvec))
-    if not candidates:
+        raw_candidates.append((rms, rvec, tvec))
+    if not raw_candidates:
         return None
-    candidates.sort(key=lambda v: v[0])
-    initial_rms, rvec, tvec = candidates[0]
+    raw_candidates.sort(key=lambda v: v[0])
+    raw_separation = 0.
+    if len(raw_candidates) > 1:
+        R0, R1 = (cv2.Rodrigues(c[1])[0] for c in raw_candidates[:2])
+        raw_separation = float(np.degrees(np.arccos(np.clip((np.trace(R0.T@R1)-1)/2, -1, 1))))
+    # IPPE roots are algebraic candidates. Refine both before comparing them:
+    # near-frontal views can produce two raw roots that collapse to one minimum.
+    refined_candidates = [c for c in (_refine_pose(obj, img, K, dist, r[1], r[2])
+                                     for r in raw_candidates) if c is not None]
+    if not refined_candidates:
+        return None
+    refined_candidates.sort(key=lambda v: v[0])
+    rms, rvec, tvec = refined_candidates[0]
+    if rms > max_error:
+        return None
     rotation_separation = 0.
-    if len(candidates) > 1:
-        R0, R1 = (cv2.Rodrigues(c[1])[0] for c in candidates[:2])
+    if len(refined_candidates) > 1:
+        R0, R1 = (cv2.Rodrigues(c[1])[0] for c in refined_candidates[:2])
         rotation_separation = float(np.degrees(np.arccos(np.clip((np.trace(R0.T@R1)-1)/2, -1, 1))))
-    ambiguous = len(candidates)>1 and candidates[1][0]-initial_rms < .25 and rotation_separation > 3
-    rvec, tvec = cv2.solvePnPRefineLM(obj, img, K, dist, rvec.copy(), tvec.copy())
+    ambiguous = (len(refined_candidates) > 1
+                 and refined_candidates[1][0]-rms < .25
+                 and rotation_separation > 3)
     R = cv2.Rodrigues(rvec)[0]
-    if np.min((R@obj.T+tvec)[2]) <= 0 or R[2, 2] <= 0:
-        return None
-    projected = cv2.projectPoints(obj, rvec, tvec, K, dist)[0].reshape(-1, 2)
-    rms = float(np.sqrt(np.mean(np.sum((projected-img)**2, axis=1))))
-    if not np.isfinite(rms) or rms > max_error:
-        return None
     T = np.eye(4)
     T[:3, :3], T[:3, 3] = R, tvec.ravel()
     inverse = np.eye(4)
@@ -177,7 +199,10 @@ def _pose(obj, img, K, dist, max_error):
             'camera_position_marker_mm': inverse[:3, 3].tolist(),
             'distance_mm': float(np.linalg.norm(tvec)), 'optical_depth_mm': float(tvec[2, 0]),
             'reprojection_rms_px': rms, 'ambiguous': bool(ambiguous),
-            'ippe_candidate_rms_px': [c[0] for c in candidates], 'candidate_angle_separation_deg': rotation_separation,
+            'ippe_candidate_rms_px': [c[0] for c in raw_candidates],
+            'candidate_angle_separation_deg': raw_separation,
+            'refined_candidate_rms_px': [c[0] for c in refined_candidates],
+            'refined_candidate_angle_separation_deg': rotation_separation,
             'point_count': len(obj)}
 
 

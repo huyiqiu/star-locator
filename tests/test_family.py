@@ -1,7 +1,7 @@
 from itertools import combinations
 import numpy as np
 import pytest
-from backend.family import ANCHORS,CODES,CELLS,bits,grid,transforms,validate_family,marker_svg,manifest
+from star16.family import ANCHORS,CODES,CELLS,bits,grid,transforms,validate_family,marker_svg,manifest
 
 
 def test_d4_minimum_distance_and_manifest():

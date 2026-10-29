@@ -8,7 +8,7 @@ import time
 import cv2
 import numpy as np
 
-from .temporal import TemporalPoseFilter
+from star16.temporal import TemporalPoseFilter
 
 # Camera handles and the native capture runtime never enter the API process.
 # A fresh spawned process also recovers a driver session stuck after reconnect.
@@ -33,7 +33,9 @@ def _capture_worker(spec,buffer,frame_lock,sequence,timestamps,updated,stop,cont
             backend=cv2.CAP_AVFOUNDATION if sys.platform=='darwin' else cv2.CAP_ANY
             cap=cv2.VideoCapture(spec['index'],backend)
             if not cap.isOpened():
-                raise ValueError('无法打开相机。请检查设备索引、系统相机权限，以及是否被其他应用占用。')
+                hint=(' macOS 请在“系统设置 → 隐私与安全性 → 相机”中允许启动本服务的应用（Qoder 或终端），然后重启服务。'
+                      if sys.platform=='darwin' else '')
+                raise ValueError('无法打开相机。请检查设备索引、系统相机权限，以及是否被其他应用占用。'+hint)
             cap.set(cv2.CAP_PROP_FRAME_WIDTH,spec['width'])
             cap.set(cv2.CAP_PROP_FRAME_HEIGHT,spec['height'])
             if not native_rate:cap.set(cv2.CAP_PROP_FPS,spec['fps'])
@@ -246,7 +248,7 @@ class CameraManager:
             return self.status()
 
     def invalidate_pose_filter(self):
-        """Reacquire after calibration, map, or detector settings change."""
+        """Reacquire after calibration or detector settings change."""
         with self.lock:self.pose_filter_revision+=1
 
     def _rates(self):

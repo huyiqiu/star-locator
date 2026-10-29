@@ -1,5 +1,5 @@
-// Browser-camera equivalent of backend/temporal.py. Uploads and simulations stay raw.
-const fields=['camera_position_marker_mm','camera_position_world_mm','robot_position_world_mm','approximate_camera_position_world_mm','approximate_robot_position_world_mm'];
+// Browser-camera equivalent of star16/temporal.py. Uploads and simulations stay raw.
+const fields=['camera_position_marker_mm'];
 const median=values=>{const ordered=[...values].sort((a,b)=>a-b);const n=ordered.length;return n%2?ordered[(n-1)/2]:(ordered[n/2-1]+ordered[n/2])/2};
 
 export class TemporalPoseFilter{

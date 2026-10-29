@@ -1,21 +1,16 @@
-import {createCalibrationUI} from '/assets/calibration.js?v=1.6.2';
-import {TemporalPoseFilter} from '/assets/temporal.js?v=1.6.2';
+import {createCalibrationUI} from '/assets/calibration.js?v=2.0.0';
+import {TemporalPoseFilter} from '/assets/temporal.js?v=2.0.0';
 const $=id=>document.getElementById(id);
-const state={source:'simulation',mode:'glow',family:null,config:null,map:null,markerPoses:[],result:null,selected:0,selectedId:null,stream:null,ws:null,running:false,session:0,lastLive:0,lastRendered:0,lastFile:null,lastImage:null,receivedAt:0,cameraOwned:false,defaultConfig:null};
+const state={source:'uvc',mode:'glow',family:null,config:null,intrinsics:null,result:null,selected:0,selectedId:null,stream:null,ws:null,running:false,session:0,lastLive:0,lastRendered:0,lastFile:null,lastImage:null,receivedAt:0,cameraOwned:false,defaultConfig:null};
 const ctx=$('viewer').getContext('2d');
 let toastTimer,paintSequence=0,calibrationUI;
 const browserPoseFilter=new TemporalPoseFilter();
 function toast(message,error=false){$('toast').textContent=message;$('toast').className='toast visible'+(error?' error':'');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').classList.remove('visible'),error?7000:3200)}
 async function api(path,options={}){const response=await fetch(path,options);let result;try{result=await response.json()}catch{throw Error('服务没有返回有效 JSON，请确认本机算法服务已运行。')}if(!response.ok){const detail=result.detail;throw Error(typeof detail==='string'?detail:Array.isArray(detail)?detail.map(d=>`${d.loc?.slice(1).join('.')||'参数'}: ${d.msg}`).join('\n'):JSON.stringify(detail)||`HTTP ${response.status}`)}return result}
+async function detectBlob(blob,filename='frame.jpg'){const form=new FormData();form.append('image',blob,filename);form.append('include_images','true');if(state.config)form.append('config',JSON.stringify(state.config));if(state.intrinsics)form.append('intrinsics',JSON.stringify(state.intrinsics));return api('/api/v1/detect',{method:'POST',body:form})}
 const jsonOptions=data=>({headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
 const toCm=millimeters=>millimeters/10;
 const toMm=centimeters=>centimeters*10;
-function mapLengthUnits(map,toCentimeters){
- const copy=JSON.parse(JSON.stringify(map)),factor=toCentimeters ? 0.1 : 10;
- for(const marker of copy.markers||[])for(let i=0;i<3;i++)marker.T_world_marker[i][3]*=factor;
- if(copy.T_camera_robot)for(let i=0;i<3;i++)copy.T_camera_robot[i][3]*=factor;
- return copy;
-}
 function on(id,fn,event='click'){$(id).addEventListener(event,async e=>{try{await fn(e)}catch(error){console.error(error);toast(error.message||String(error),true)}})}
 function busy(button,value){button.disabled=value;button.classList.toggle('busy',value)}
 function download(name,text,type='application/json'){const url=URL.createObjectURL(new Blob([text],{type}));const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}
@@ -23,7 +18,6 @@ function route(){const name=['live','family','calibration','api'].includes(locat
 window.addEventListener('hashchange',route);route();
 function drawGrid(element,grid){element.replaceChildren();for(let r=0;r<4;r++)for(let c=0;c<4;c++){const dot=document.createElement('i');dot.className=grid?.[r]?.[c]?'on'+((r===0||r===3)&&(c===0||c===3)?' anchor':''):'';element.appendChild(dot)}}
 function selectedMarker(){return state.result?.markers?.[state.selected]||null}
-function valueMetric(id,value,unit){$(id).replaceChildren(document.createTextNode(value===null?'— ':`${value} `));const small=document.createElement('small');small.textContent=unit;$(id).appendChild(small)}
 const poseLabels={valid:'有效',approximate:'粗略估计',ambiguous:'平面双解',calibration_required:'待相机标定',reprojection_rejected:'重投影拒绝'};
 function showResult(result){
  if(state.source==='browser')browserPoseFilter.apply(result,performance.now());
@@ -53,14 +47,14 @@ function updateObservation(){
  $('quality-value').textContent=m?`${(m.quality_score*100).toFixed(1)} / 100`:'—';$('quality-bar').style.width=m?`${m.quality_score*100}%`:'0%';
  $('matched-count').textContent=m?`${m.dot_indices.length} 点`:'—';$('hamming-value').textContent=m?m.corrected?`已修正 ${m.hamming_distance} 位`:'精确匹配':'—';
  $('pose-status').textContent=m?poseLabels[m.pose_status]:'无有效标记';$('observation-chip').textContent=m?'已识别':state.result?'亮点调试':'等待输入';
- $('world-position-status').textContent=m?({valid:'可信',approximate:'粗略估计',unmapped_marker:'未设置地标',relative_pose_invalid:'位姿未通过',geometry_rejected:'质量未达标'}[m.world_position_status]||'等待地图'):'—';
- const world=position?.camera_position_world_cm??position?.approximate_camera_position_world_cm;
- valueMetric('metric-world-x',world?world[0].toFixed(1):null,'cm');valueMetric('metric-world-y',world?world[1].toFixed(1):null,'cm');valueMetric('metric-error',pose?pose.reprojection_rms_px.toFixed(3):null,'px');
- $('world-x-note').textContent=world?`${m.world_position_status==='approximate'?'粗略估计 · ':''}地标 ID ${String(m.id).padStart(3,'0')} · 相机光心`:m?.world_position_status==='geometry_rejected'?'编码或几何质量未达标':m&&pose?'请在「相机标定 → 地标地图」设置此 ID':'等待有效地标位姿';
- $('world-y-note').textContent=world?(m.world_position_status==='approximate'?'粗略估计 · 误差可能较大':'世界坐标 · 相机光心'):m?.world_position_status==='geometry_rejected'?'已抑制不可靠的地图位置':'未配置时不输出地图坐标';
  $('relative-distance').textContent=position?.distance_cm!=null?`${position.distance_cm.toFixed(1)} cm`:'—';
  $('relative-angle').textContent=m?`${m.direction_deg.toFixed(1)}°`:'—';
- const p=position?.camera_position_marker_cm;['x','y','z'].forEach((axis,i)=>$(`pose-${axis}`).textContent=p?p[i].toFixed(1):'—');
+ const p=position?.camera_position_marker_cm;['x','y','z'].forEach((axis,i)=>{const value=p?p[i].toFixed(1):'—';$(`pose-${axis}`).textContent=value;$(`hud-${axis}`).textContent=value});
+ $('fullscreen-hud').classList.toggle('empty',!m);
+ $('hud-status').textContent=m?(poseLabels[m.pose_status]||m.pose_status):'无有效标记';
+ $('hud-marker').textContent=m?`ID ${String(m.id).padStart(3,'0')}`:'ID —';
+ $('hud-distance').textContent=position?.distance_cm!=null?`${position.distance_cm.toFixed(1)} cm`:'距离 —';
+ $('hud-angle').textContent=m?`${m.direction_deg.toFixed(1)}°`:'方向 —';
  document.querySelectorAll('#marker-selector button').forEach((b,i)=>b.classList.toggle('selected',i===state.selected));
  let note='',warn=false;
  if(state.source==='simulation')note='当前是合成演示，使用真实检测算法和已知合成内参。识别与位姿用于验证算法链路，不代表现场精度。';
@@ -68,10 +62,8 @@ function updateObservation(){
  else if(m.pose_status==='calibration_required'){note='ID 与方向已识别。请在“相机标定”中导入真实内参或完成棋盘格标定，厘米位姿随后生效。';warn=true}
  else if(m.pose_status==='ambiguous'){note='当前平面位姿存在两个近似等价解。可增加观察倾角或引入安装姿态、里程计约束，当前结果已标记为歧义。';warn=true}
  else if(m.pose_status==='reprojection_rejected'){note='图案已识别，但位姿没有通过几何质量门限。请检查标定、实际点间距、反光点粘贴位置及曝光。';warn=true}
- else if(m.pose_status==='approximate'){note=`点阵已精确解码，当前坐标为粗略估计（重投影误差 ${pose.reprojection_rms_px.toFixed(1)} px），地图位置可能有较大偏差。建议检查标定和点位。`;warn=true}
- else if(m.world_position_status==='geometry_rejected'){note='这帧的 ID 或几何质量未达到地图定位门限：仅精确编码且网格与位姿误差均不超过 2.5 px 时，才输出地图 X/Y。';warn=true}
- else if(!world){note=`已识别 ID ${String(m.id).padStart(3,'0')}，但还没有这个地标的地图位姿。请到“相机标定 → 地标地图”填写标记中心 X/Y/Z 和坐标轴方向。`;warn=true}
- else note=`已根据 ID ${String(m.id).padStart(3,'0')} 的地图位姿，计算相机光心在地图中的 X/Y。若需要机器人中心位置，还需设置相机安装外参。`;
+ else if(m.pose_status==='approximate'){note='点阵已精确解码，当前位姿为粗略估计。建议检查标定与反光点位置，并仅将其作为参考。';warn=true}
+ else note=`已输出相机光心相对标记 ID ${String(m.id).padStart(3,'0')} 的位姿。世界坐标与机器人坐标请由集成应用自行变换。`;
  if(state.result?.warnings?.includes('calibration_aspect_mismatch')){note='当前画面宽高比与标定分辨率不同，已停止位姿输出。请恢复标定时的取景格式或重新标定。';warn=true}
  if(!m&&state.result?.warnings?.includes('undistortion_unstable')){note='画面中的部分点无法用当前畸变参数稳定还原，边缘位置可能无法识别。请先将标记移近画面中心验证，并用覆盖画面边缘的棋盘视图重新标定。';warn=true}
  $('notice-text').textContent=note;$('live-notice').classList.toggle('warn',warn);
@@ -99,10 +91,13 @@ async function paint(){
  });
  ctx.strokeStyle='#7f9a8570';ctx.lineWidth=1*scale;const cx=canvas.width/2,cy=canvas.height/2;ctx.beginPath();ctx.moveTo(cx-8*scale,cy);ctx.lineTo(cx+8*scale,cy);ctx.moveTo(cx,cy-8*scale);ctx.lineTo(cx,cy+8*scale);ctx.stroke();
 }
-function clearObservation(message='等待图像输入'){
+const emptyHints={simulation:'正在生成合成图像，用于验证算法链路。',browser:'请允许浏览器相机权限后重试。',uvc:'正在连接 USB 相机，也可改用合成演示验证算法链路。',image:'选择一张红外图像进行检测。'};
+function clearObservation(message='等待图像输入',detail=emptyHints[state.source]||'确认设备连接后重试。'){
  browserPoseFilter.reset();
- state.result=null;state.selected=0;state.selectedId=null;paintSequence++;ctx.clearRect(0,0,$('viewer').width,$('viewer').height);$('viewer-empty').hidden=false;$('viewer-empty').querySelector('strong').textContent=message;$('tracking-status').textContent=message;$('latency').textContent='— ms';$('live-json').textContent='无新鲜有效帧';$('marker-selector').replaceChildren();$('pipeline-stats').textContent='等待算法返回诊断信息';$('image-stats').textContent='等待图像统计';updateObservation();
+ state.result=null;state.selected=0;state.selectedId=null;paintSequence++;ctx.clearRect(0,0,$('viewer').width,$('viewer').height);$('viewer-empty').hidden=false;$('viewer-empty').querySelector('strong').textContent=message;$('viewer-empty').querySelector('p').textContent=detail;$('tracking-status').textContent=message;$('latency').textContent='— ms';$('live-json').textContent='无新鲜有效帧';$('marker-selector').replaceChildren();$('pipeline-stats').textContent='等待算法返回诊断信息';$('image-stats').textContent='等待图像统计';updateObservation();
 }
+function showLiveNotice(message,warn=false){$('notice-text').textContent=message;$('live-notice').classList.toggle('warn',warn);$('live-notice').hidden=false}
+function hideLiveNotice(){$('live-notice').hidden=true;$('live-notice').classList.remove('warn')}
 function simulationOptions(){return {marker_id:Number($('sim-id').value),yaw_deg:Number($('sim-yaw').value),distance_mm:toMm(Number($('sim-distance').value)),noise_sigma:Number($('sim-noise').value),tilt_x_deg:Number($('sim-tiltx').value),tilt_y_deg:Number($('sim-tilty').value),missing_cell:$('sim-missing').value===''?null:Number($('sim-missing').value),second_marker:$('sim-second').checked}}
 async function renderSimulation(){const token=state.session;busy($('render-sim'),true);try{const result=await api('/api/simulate',{method:'POST',...jsonOptions(simulationOptions())});if(token===state.session&&state.source==='simulation')showResult(result)}finally{busy($('render-sim'),false)}}
 async function stopCapture(){
@@ -128,7 +123,7 @@ async function startBrowser(){
  async function loop(){
   if(!state.running||token!==state.session)return;
   const t0=performance.now();
-  try{if(video.readyState<2)throw Error('相机暂未输出图像');if(video.currentTime!==lastVideoTime){lastVideoTime=video.currentTime;videoUpdatedAt=performance.now()}else if(performance.now()-videoUpdatedAt>1000)throw Error('相机没有新鲜视频帧，已停止位姿输出');cap.width=video.videoWidth;cap.height=video.videoHeight;cap.getContext('2d').drawImage(video,0,0);const blob=await new Promise(resolve=>cap.toBlob(resolve,'image/jpeg',.9));if(!blob)throw Error('无法编码相机帧');const form=new FormData();form.append('file',blob,'frame.jpg');form.append('include_images','true');const result=await api('/api/detect',{method:'POST',body:form});if(token!==state.session)return;result.source='browser';showResult(result);$('frame-rate').textContent=`${(1000/(performance.now()-t0)).toFixed(1)} fps`;}
+  try{if(video.readyState<2)throw Error('相机暂未输出图像');if(video.currentTime!==lastVideoTime){lastVideoTime=video.currentTime;videoUpdatedAt=performance.now()}else if(performance.now()-videoUpdatedAt>1000)throw Error('相机没有新鲜视频帧，已停止位姿输出');cap.width=video.videoWidth;cap.height=video.videoHeight;cap.getContext('2d').drawImage(video,0,0);const blob=await new Promise(resolve=>cap.toBlob(resolve,'image/jpeg',.9));if(!blob)throw Error('无法编码相机帧');const result=await detectBlob(blob,'frame.jpg');if(token!==state.session)return;result.source='browser';showResult(result);$('frame-rate').textContent=`${(1000/(performance.now()-t0)).toFixed(1)} fps`;}
   catch(error){if(token!==state.session)return;clearObservation('图像处理失败');toast(error.message,true);state.running=false;state.stream?.getTracks().forEach(t=>t.stop());return}
   setTimeout(loop,Math.max(0,100-(performance.now()-t0)));
  }
@@ -145,8 +140,8 @@ function connectWebSocket(){
 async function startUVC(){
  if($('start-uvc').disabled)return;
  busy($('start-uvc'),true);$('stop-uvc').disabled=true;
- try{await stopCapture();clearObservation('正在打开 UVC 相机，等待首帧');$('source-state').textContent='正在连接…';const [width,height]=$('uvc-resolution').value.split(',').map(Number);const status=await api('/api/camera/start',{method:'POST',...jsonOptions({index:Number($('uvc-index').value),width,height,fps:Number($('uvc-fps').value)})});state.cameraOwned=true;$('source-state').textContent=`真实设备 ${status.device.index} · ${status.device.width} × ${status.device.height}`;connectWebSocket();await refreshUvcControls()}
- catch(error){$('source-state').textContent='连接失败';clearObservation(error.message);throw error}
+ try{await stopCapture();clearObservation('正在打开 UVC 相机，等待首帧');$('source-state').textContent='正在连接…';const [width,height]=$('uvc-resolution').value.split(',').map(Number);const status=await api('/api/camera/start',{method:'POST',...jsonOptions({index:Number($('uvc-index').value),width,height,fps:Number($('uvc-fps').value)})});state.cameraOwned=true;$('source-state').textContent=`真实设备 ${status.device.index} · ${status.device.width} × ${status.device.height}`;hideLiveNotice();connectWebSocket();await refreshUvcControls()}
+ catch(error){$('source-state').textContent='连接失败';clearObservation('USB 相机连接失败',error.message);showLiveNotice(error.message,true);throw error}
  finally{busy($('start-uvc'),false);$('stop-uvc').disabled=false}
 }
 function setUvcControlAvailability(available){
@@ -170,6 +165,7 @@ function showUvcControls(data,message='已读取相机实际设置'){
  $('uvc-gain').step=String(gain.step_size||1);
  $('uvc-gain').value=String(gain.current_value);
  $('uvc-controls-status').textContent=`${message} · ${exposure.current_value/10} ms / 增益 ${gain.current_value}`;
+ if(data.saved)$('uvc-controls-status').textContent+=` · 重启后自动应用：${data.saved.mode==='manual'?`${(data.saved.exposure_100us/10).toFixed(1)} ms / 增益 ${data.saved.gain}`:'自动曝光'}`;
  setUvcControlAvailability(true);
 }
 async function refreshUvcControls(){
@@ -186,37 +182,18 @@ async function applyUvcControls(event){
   body.gain=Number($('uvc-gain').value);
  }
  busy($('apply-uvc-controls'),true);
- try{showUvcControls(await api('/api/camera/controls',{method:'PUT',...jsonOptions(body)}),'已应用并回读确认');toast('相机曝光与增益已应用')}
+ try{showUvcControls(await api('/api/camera/controls',{method:'PUT',...jsonOptions(body)}),'已应用并回读确认');toast('相机曝光与增益已应用，重启后自动恢复')}
  finally{busy($('apply-uvc-controls'),false)}
 }
 async function resetUvcControls(){
  busy($('reset-uvc-controls'),true);
- try{showUvcControls(await api('/api/camera/controls/reset',{method:'POST'}),'已恢复相机硬件默认值');toast('相机曝光与增益已恢复默认')}
+ try{showUvcControls(await api('/api/camera/controls/reset',{method:'POST'}),'已恢复相机硬件默认值 · 自动应用已清除');toast('相机曝光与增益已恢复默认')}
  finally{busy($('reset-uvc-controls'),false)}
 }
-async function processFile(file){state.lastFile=file;const token=state.session;const form=new FormData();form.append('file',file);form.append('include_images','true');const result=await api('/api/detect',{method:'POST',body:form});if(token===state.session){showResult(result);$('upload-name').textContent=file.name;$('source-state').textContent='真实图像 · 单帧'}}
+async function processFile(file){state.lastFile=file;const token=state.session;const result=await detectBlob(file,file.name||'frame.jpg');if(token===state.session){showResult(result);$('upload-name').textContent=file.name;$('source-state').textContent='真实图像 · 单帧'}}
 function configToForm(c){$('cfg-spacing').value=toCm(c.spacing_mm);$('cfg-diameter').value=toCm(c.dot_diameter_mm);$('cfg-threshold-mode').value=c.threshold_mode;$('cfg-threshold').value=c.threshold;$('threshold-output').textContent=c.threshold;$('cfg-min-area').value=c.min_area;$('cfg-max-area').value=c.max_area;$('cfg-circularity').value=c.min_circularity;$('cfg-reprojection').value=c.max_reprojection_error_px;$('cfg-edge-pose-error').value=c.edge_pose_max_reprojection_error_px??20;$('cfg-hamming').value=c.max_hamming;$('cfg-blur').value=c.blur_size;$('cfg-smoothing').value=c.temporal_smoothing_ms??300;$('cfg-threshold').disabled=c.threshold_mode!=='fixed'}
 function formToConfig(){return {...state.config,spacing_mm:toMm(Number($('cfg-spacing').value)),dot_diameter_mm:toMm(Number($('cfg-diameter').value)),threshold_mode:$('cfg-threshold-mode').value,threshold:Number($('cfg-threshold').value),min_area:Number($('cfg-min-area').value),max_area:Number($('cfg-max-area').value),min_circularity:Number($('cfg-circularity').value),max_reprojection_error_px:Number($('cfg-reprojection').value),edge_pose_max_reprojection_error_px:Number($('cfg-edge-pose-error').value),max_hamming:Number($('cfg-hamming').value),blur_size:Number($('cfg-blur').value),temporal_smoothing_ms:Number($('cfg-smoothing').value)}}
 async function reprocess(){if(state.source==='simulation')await renderSimulation();else if(state.source==='image'&&state.lastFile)await processFile(state.lastFile)}
-function markerPoseToForm(){
- const id=Number($('map-marker-id').value),pose=state.markerPoses.find(p=>p.id===id);
- for(const [field,key] of [['map-x','x_mm'],['map-y','y_mm'],['map-z','z_mm'],['map-yaw','yaw_deg'],['map-pitch','pitch_deg'],['map-roll','roll_deg']])$(field).value=pose?String(Number((key.endsWith('_mm')?toCm(pose[key]):pose[key]).toFixed(6))):'0';
- $('map-pose-status').textContent=pose?`ID ${String(id).padStart(3,'0')} 的地图位姿已保存，可修改。`:'此 ID 尚未设置地图位姿。';
-}
-async function refreshMarkerPoses(){state.markerPoses=await api('/api/map/marker-poses');markerPoseToForm()}
-async function saveMarkerPose(event){
- event.preventDefault();
- const pose={id:Number($('map-marker-id').value),x_cm:Number($('map-x').value),y_cm:Number($('map-y').value),z_cm:Number($('map-z').value),yaw_deg:Number($('map-yaw').value),pitch_deg:Number($('map-pitch').value),roll_deg:Number($('map-roll').value)};
- const result=await api('/api/map/marker-pose',{method:'PUT',...jsonOptions(pose)});
- state.map=result.map;$('map-json').value=JSON.stringify(mapLengthUnits(result.map,true),null,2);await refreshMarkerPoses();
- toast(`地标 ID ${String(pose.id).padStart(3,'0')} 的地图位姿已保存`);await reprocess();
-}
-async function removeMarkerPose(){
- const id=Number($('map-marker-id').value);
- state.map=await api(`/api/map/marker-pose/${id}`,{method:'DELETE'});
- $('map-json').value=JSON.stringify(mapLengthUnits(state.map,true),null,2);await refreshMarkerPoses();
- toast(`已移除地标 ID ${String(id).padStart(3,'0')}`);await reprocess();
-}
 function initFamily(family){
  $('family-count').textContent=String(family.markers.length).padStart(2,'0');$('family-nav-count').textContent=String(family.markers.length).padStart(2,'0');$('family-distance').textContent=String(family.minimum_d4_hamming_distance).padStart(2,'0');
  $('family-grid').replaceChildren();family.markers.forEach(m=>{
@@ -227,14 +204,14 @@ function initFamily(family){
   const getSvg=async template=>{const spacing=Number($('family-spacing').value),diameter=Number($('family-diameter').value);if(!spacing||!diameter||diameter>spacing*.8){toast('反光点直径须不超过点中心间距的 80%。',true);return}const response=await fetch(`/api/family/${m.id}/svg?spacing_mm=${toMm(spacing)}&diameter_mm=${toMm(diameter)}&template=${template}`);if(!response.ok){toast('尺寸无效，请检查间距和直径。',true);return}download(`star16-v2-${String(m.id).padStart(3,'0')}${template?'-cutting':''}.svg`,await response.text(),'image/svg+xml')};
   card.querySelector('[data-action="svg"]').onclick=()=>getSvg(false).catch(e=>toast(e.message,true));card.querySelector('[data-action="cut"]').onclick=()=>getSvg(true).catch(e=>toast(e.message,true));$('family-grid').append(card);
  });
- family.markers.forEach(m=>{const o=document.createElement('option');o.value=m.id;o.textContent=`${String(m.id).padStart(3,'0')} / 0x${m.code_hex}`;$('sim-id').append(o);const mapOption=document.createElement('option');mapOption.value=m.id;mapOption.textContent=`ID ${String(m.id).padStart(3,'0')}`;$('map-marker-id').append(mapOption)});
+ family.markers.forEach(m=>{const o=document.createElement('option');o.value=m.id;o.textContent=`${String(m.id).padStart(3,'0')} / 0x${m.code_hex}`;$('sim-id').append(o)});
  for(let i=0;i<16;i++){const o=document.createElement('option');o.value=i;o.textContent=`第 ${Math.floor(i/4)+1} 行，第 ${i%4+1} 列`;$('sim-missing').append(o)}
 }
-async function saveIntrinsics(){const data=JSON.parse($('intrinsics-json').value);data.calibrated=$('confirm-calibrated').checked;if(!data.calibrated)throw Error('请先完成真实标定，或确认导入参数来自本相机。');const intr=await api('/api/intrinsics',{method:'PUT',...jsonOptions(data)});$('intrinsics-json').value=JSON.stringify(intr,null,2);$('calibration-badge').textContent='已保存真实内参';toast('相机内参已保存，后续真实帧将计算位姿。');await reprocess()}
+async function saveIntrinsics(){const data=JSON.parse($('intrinsics-json').value);data.calibrated=$('confirm-calibrated').checked;if(!data.calibrated)throw Error('请先完成真实标定，或确认导入参数来自本相机。');const intr=await api('/api/intrinsics',{method:'PUT',...jsonOptions(data)});state.intrinsics=intr;$('intrinsics-json').value=JSON.stringify(intr,null,2);$('calibration-badge').textContent='已保存真实内参';toast('相机内参已保存，后续真实帧将计算位姿。');await reprocess()}
 function initApi(){
- $('curl-example').textContent=`curl -X POST ${location.origin}/api/detect \\\n  -F 'file=@infrared.jpg' \\\n  -F 'include_images=false'`;
- const protocol=location.protocol==='https:'?'wss':'ws';$('ws-example').textContent=`// 先 POST /api/camera/start 打开设备\nconst ws = new WebSocket(\n  '${protocol}://${location.host}/ws/camera'\n);\nws.onmessage = ({ data }) => {\n  const frame = JSON.parse(data);\n  if (frame.stale) return; // 清除旧位姿\n  for (const marker of frame.markers) {\n    if (marker.pose_status === 'valid')\n      console.log(marker.id, marker.pose.filtered?.camera_position_world_cm ?? null);\n    else if (marker.pose_status === 'approximate')\n      console.warn('粗略位置', marker.id, marker.pose.filtered?.approximate_camera_position_world_cm ?? null);\n  }\n};`;
- const endpoints=[['GET','/api/health','健康状态与 OpenCV 版本'],['GET','/api/family','完整基准族与编码定义'],['GET','/api/family/{id}/svg','按页面厘米尺寸打印标记 / 裁切模板'],['GET / PUT','/api/config','读取 / 保存检测参数'],['PUT / DELETE','/api/intrinsics','保存 / 删除相机内参'],['PUT','/api/map','配置完整地标地图和安装外参'],['GET','/api/map/marker-poses','读取各标记的地图 X/Y/Z 与朝向'],['PUT','/api/map/marker-pose','按 X/Y/Z 与偏航/俯仰/横滚设置地标'],['DELETE','/api/map/marker-pose/{id}','移除一个地图地标'],['POST','/api/detect','上传单帧并检测'],['POST','/api/simulate','生成投影测试图并运行检测'],['POST','/api/camera/start','打开本机 UVC 相机'],['POST','/api/camera/stop','停止采集并释放设备'],['GET / PUT','/api/camera/controls','读取 / 设置硬件曝光与增益'],['POST','/api/camera/controls/reset','一键恢复硬件默认曝光'],['GET','/api/camera/frame','最新结果，可选附带画面'],['WS','/ws/camera','持续读取新鲜观测'],['POST / DELETE','/api/calibration/views','添加 / 清空棋盘格视图'],['POST','/api/calibration/observe','实时棋盘检测与自动稳定采集'],['POST','/api/calibration/camera-view','从后端相机采集棋盘视图'],['POST','/api/calibration/solve','计算内参及每视图误差']];endpoints.forEach(([method,path,description])=>{const row=document.createElement('div');row.innerHTML=`<strong>${method}</strong><code>${path}</code><span>${description}</span>`;$('endpoint-table').append(row)})
+ $('curl-example').textContent=`curl -X POST ${location.origin}/api/v1/detect \\\n  -F 'image=@infrared.jpg' \\\n  -F 'intrinsics=<camera-intrinsics.json' \\\n  -F 'config=<detector.json' \\\n  -F 'include_images=false'`;
+ const protocol=location.protocol==='https:'?'wss':'ws';$('ws-example').textContent=`// 先 POST /api/camera/start 打开设备\nconst ws = new WebSocket(\n  '${protocol}://${location.host}/ws/camera'\n);\nws.onmessage = ({ data }) => {\n  const frame = JSON.parse(data);\n  if (frame.stale) return; // 清除旧位姿\n  for (const marker of frame.markers) {\n    if (marker.pose_status === 'valid')\n      console.log(marker.id, marker.pose.filtered?.camera_position_marker_cm ?? null);\n    else if (marker.pose_status === 'approximate')\n      console.warn('粗略相对位置', marker.id, marker.pose.filtered?.camera_position_marker_cm ?? null);\n  }\n};`;
+ const endpoints=[['GET','/api/health','健康状态与 OpenCV 版本'],['GET','/api/family','完整基准族与编码定义'],['GET','/api/family/{id}/svg','按页面厘米尺寸打印标记 / 裁切模板'],['GET / PUT','/api/config','读取 / 保存检测参数'],['PUT / DELETE','/api/intrinsics','保存 / 删除相机内参'],['POST','/api/v1/detect','无状态单帧检测：图像 + 可选内参 + 可选参数'],['POST','/api/simulate','生成投影测试图并运行检测'],['POST','/api/camera/start','打开本机 UVC 相机'],['POST','/api/camera/stop','停止采集并释放设备'],['GET / PUT','/api/camera/controls','读取 / 设置硬件曝光与增益'],['POST','/api/camera/controls/reset','一键恢复硬件默认曝光'],['GET','/api/camera/frame','最新结果，可选附带画面'],['WS','/ws/camera','持续读取新鲜观测'],['POST / DELETE','/api/calibration/views','添加 / 清空棋盘格视图'],['POST','/api/calibration/observe','实时棋盘检测与自动稳定采集'],['POST','/api/calibration/camera-view','从后端相机采集棋盘视图'],['POST','/api/calibration/solve','计算内参及每视图误差']];endpoints.forEach(([method,path,description])=>{const row=document.createElement('div');row.innerHTML=`<strong>${method}</strong><code>${path}</code><span>${description}</span>`;$('endpoint-table').append(row)})
 }
 document.querySelectorAll('#view-modes button').forEach(b=>b.onclick=()=>{state.mode=b.dataset.mode;document.querySelectorAll('#view-modes button').forEach(x=>x.classList.toggle('selected',x===b));paint();refreshStreamMode()});
 document.querySelectorAll('#source-tabs button').forEach(b=>b.onclick=()=>setSource(b.dataset.source).catch(e=>toast(e.message,true)));
@@ -252,19 +229,23 @@ on('reset-config',()=>{configToForm(state.defaultConfig);$('config-status').text
 on('download-family',()=>download('star16-v2-family.json',JSON.stringify(state.family,null,2)));
 on('save-intrinsics',saveIntrinsics);on('intrinsics-file',async e=>{const file=e.target.files[0];if(file){const data=JSON.parse(await file.text());$('intrinsics-json').value=JSON.stringify(data.intrinsics||data,null,2);$('confirm-calibrated').checked=false;toast('已载入文件，请确认来源后保存。')}},'change');
 on('export-intrinsics',()=>{const data=JSON.parse($('intrinsics-json').value);download('star-locator-camera-intrinsics.json',JSON.stringify(data,null,2))});
-on('clear-intrinsics',async()=>{await api('/api/intrinsics',{method:'DELETE'});$('confirm-calibrated').checked=false;$('calibration-badge').textContent='尚未标定';toast('已清除内参，真实帧暂停输出厘米位姿。');await reprocess()});
-on('map-marker-id',markerPoseToForm,'change');on('marker-pose-form',saveMarkerPose,'submit');on('remove-marker-pose',removeMarkerPose);
-on('save-map',async()=>{const map=JSON.parse($('map-json').value);state.map=await api('/api/map',{method:'PUT',...jsonOptions(mapLengthUnits(map,false))});$('map-json').value=JSON.stringify(mapLengthUnits(state.map,true),null,2);await refreshMarkerPoses();toast('地标地图与安装外参已保存。');await reprocess()});
+on('clear-intrinsics',async()=>{await api('/api/intrinsics',{method:'DELETE'});state.intrinsics=null;$('confirm-calibrated').checked=false;$('calibration-badge').textContent='尚未标定';toast('已清除内参，真实帧暂停输出厘米位姿。');await reprocess()});
 document.querySelectorAll('[data-copy]').forEach(button=>button.onclick=()=>navigator.clipboard.writeText($(button.dataset.copy).textContent).then(()=>toast('已复制')).catch(()=>toast('复制失败，请手动选择示例。',true)));
 setInterval(()=>{if(state.running&&state.lastLive&&performance.now()-state.lastLive>1800&&state.result)clearObservation('当前帧已过期，位姿已清除')},500);
 window.addEventListener('beforeunload',()=>{state.stream?.getTracks().forEach(t=>t.stop());if(state.cameraOwned)fetch('/api/camera/stop',{method:'POST',keepalive:true}).catch(()=>{})});
 async function init(){
  initApi();drawGrid($('mini-grid'),null);document.querySelectorAll('#view-modes button').forEach(b=>b.classList.toggle('selected',b.dataset.mode===state.mode));
  const health=await api('/api/health');$('service-text').textContent='算法服务已连接';$('opencv-version').textContent=`OpenCV ${health.opencv} · 本机处理`;
- const [family,config,calib]=await Promise.all([api('/api/family'),api('/api/config'),api('/api/calibration/status')]);state.family=family;state.config=config.detector;state.defaultConfig={spacing_mm:40,dot_diameter_mm:20,threshold_mode:'fixed',threshold:185,min_area:8,max_area:6000,min_circularity:.35,blur_size:3,max_hamming:0,grid_tolerance:.23,max_reprojection_error_px:2.5,edge_pose_max_reprojection_error_px:20,max_blobs:96,max_markers:8,temporal_smoothing_ms:300};initFamily(family);configToForm(config.detector);$('family-spacing').value=toCm(config.detector.spacing_mm);$('family-diameter').value=toCm(config.detector.dot_diameter_mm);
+ const [family,config,calib]=await Promise.all([api('/api/family'),api('/api/config'),api('/api/calibration/status')]);state.family=family;state.config=config.detector;state.intrinsics=config.intrinsics;state.defaultConfig={spacing_mm:40,dot_diameter_mm:20,threshold_mode:'fixed',threshold:185,min_area:8,max_area:6000,min_circularity:.35,blur_size:3,max_hamming:0,grid_tolerance:.23,max_reprojection_error_px:2.5,edge_pose_max_reprojection_error_px:20,max_blobs:96,max_markers:8,temporal_smoothing_ms:300};initFamily(family);configToForm(config.detector);$('family-spacing').value=toCm(config.detector.spacing_mm);$('family-diameter').value=toCm(config.detector.dot_diameter_mm);
  const example={width:1280,height:720,fx:1000,fy:1000,cx:640,cy:360,distortion:[0,0,0,0,0],calibrated:false,source:'replace_with_real_calibration'};
- $('intrinsics-json').value=JSON.stringify(config.intrinsics||example,null,2);$('confirm-calibrated').checked=!!config.intrinsics?.calibrated;$('calibration-badge').textContent=config.intrinsics?.calibrated?'已保存真实内参':'尚未标定';state.map=config.map;$('map-json').value=JSON.stringify(mapLengthUnits(config.map,true),null,2);await refreshMarkerPoses();calibrationUI=createCalibrationUI({api,on,toast,state});calibrationUI.updateStatus(calib,{restoreOptions:true});
- if(health.camera.running||new URLSearchParams(location.search).get('source')==='uvc'){await setSource('uvc');state.cameraOwned=false;if(health.camera.running){$('source-state').textContent='后端 UVC 已在采集';connectWebSocket()}}else await renderSimulation();
+ $('intrinsics-json').value=JSON.stringify(config.intrinsics||example,null,2);$('confirm-calibrated').checked=!!config.intrinsics?.calibrated;$('calibration-badge').textContent=config.intrinsics?.calibrated?'已保存真实内参':'尚未标定';calibrationUI=createCalibrationUI({api,on,toast,state});calibrationUI.updateStatus(calib,{restoreOptions:true});
+ const requested=new URLSearchParams(location.search).get('source');
+ if(requested==='simulation')await setSource('simulation');
+ else{
+  await setSource('uvc');
+  if(health.camera.running){state.cameraOwned=false;$('source-state').textContent='后端 UVC 已在采集';connectWebSocket()}
+  else{try{await startUVC()}catch(error){toast(error.message,true)}}
+ }
  if(location.hash==='#calibration')await calibrationUI.setActive(true);
 }
 init().catch(error=>{$('service-dot').style.background='#e5a472';$('service-text').textContent='算法服务连接失败';clearObservation('算法服务尚未连接');toast(error.message,true)});

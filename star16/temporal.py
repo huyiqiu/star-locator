@@ -12,13 +12,7 @@ import math
 import numpy as np
 
 
-POSITION_FIELDS = (
-    'camera_position_marker_mm',
-    'camera_position_world_mm',
-    'robot_position_world_mm',
-    'approximate_camera_position_world_mm',
-    'approximate_robot_position_world_mm',
-)
+POSITION_FIELDS = ('camera_position_marker_mm',)
 LENGTH_FIELDS = POSITION_FIELDS + ('distance_mm', 'optical_depth_mm', 'tvec_mm')
 WINDOW = 3
 MAX_GAP_S = .35

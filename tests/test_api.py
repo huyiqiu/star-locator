@@ -2,7 +2,9 @@ from io import BytesIO
 import json
 import cv2
 import numpy as np
-from backend.models import DetectorConfig,Simulation
+from star16 import __version__
+from star16.models import DetectorConfig
+from backend.models import Simulation
 from backend.simulation import SIM_INTRINSICS,render_simulation
 
 
@@ -10,12 +12,18 @@ def as_upload(frame):
     return {'file':('frame.jpg',cv2.imencode('.jpg',frame)[1].tobytes(),'image/jpeg')}
 
 
+def as_detect_upload(frame):
+    return {'image':('frame.jpg',cv2.imencode('.jpg',frame)[1].tobytes(),'image/jpeg')}
+
+
 def test_health_static_and_openapi(client):
-    assert client.get('/api/health').json()['version']=='1.6.2'
+    assert client.get('/api/health').json()['version']==__version__=='2.0.0'
     assert '<title>star-locator · 红外星阵定位</title>' in client.get('/').text
     assert client.get('/openapi.json').json()['info']['title']=='star-locator API'
     assert client.get('/assets/app.js').status_code==200
-    assert '/api/detect' in client.get('/openapi.json').json()['paths']
+    paths=client.get('/openapi.json').json()['paths']
+    assert '/api/v1/detect' in paths
+    assert '/api/detect' not in paths
     assert client.get('/api/family').json()['minimum_d4_hamming_distance']==3
     assert client.get('/api/family/1/svg').status_code==200
     assert client.get('/api/family/99/svg').status_code==422
@@ -27,7 +35,7 @@ def test_simulation_and_upload_have_different_calibration_sources(client):
     assert packet['markers'][0]['id']==3
     assert packet['markers'][0]['pose'] is not None
     frame,_=render_simulation(Simulation(marker_id=3),DetectorConfig())
-    r=client.post('/api/detect',files=as_upload(frame))
+    r=client.post('/api/v1/detect',files=as_detect_upload(frame))
     assert r.status_code==200
     packet=r.json()
     assert packet['source']=='image'
@@ -42,15 +50,15 @@ def test_validation_and_damaged_upload(client):
     assert client.put('/api/config',json={'max_hamming':2}).status_code==422
     assert client.put('/api/config',json={'temporal_smoothing_ms':1501}).status_code==422
     assert client.put('/api/config',json={'unknown':1}).status_code==422
-    assert client.post('/api/detect',files={'file':('bad.jpg',b'broken','image/jpeg')}).status_code==422
-    assert client.post('/api/detect',files={'file':('big.jpg',b'x'*(10*1024*1024+1),'image/jpeg')}).status_code==413
+    assert client.post('/api/v1/detect',files={'image':('bad.jpg',b'broken','image/jpeg')}).status_code==422
+    assert client.post('/api/v1/detect',files={'image':('big.jpg',b'x'*(10*1024*1024+1),'image/jpeg')}).status_code==413
     assert client.get('/api/camera/frame').status_code==409
     assert client.post('/api/calibration/solve').status_code==422
     assert client.put('/api/intrinsics',json={'width':960,'height':600,'fx':1000,'fy':1000,'cx':480,'cy':300,'distortion':[0]*6}).status_code==422
 
 
 def test_camera_exposure_endpoints_validate_and_report_hardware(client,monkeypatch):
-    from backend.app import uvc_controls
+    from backend.app import DATA,uvc_controls
     from backend.uvc_controls import UvcControlError
     calls=[]
     status={'device':{'name':'USB 2.0 Camera'},'mode':'manual',
@@ -58,95 +66,62 @@ def test_camera_exposure_endpoints_validate_and_report_hardware(client,monkeypat
     monkeypatch.setattr(uvc_controls,'status',lambda:status)
     monkeypatch.setattr(uvc_controls,'apply',lambda mode,exposure,gain:(calls.append((mode,exposure,gain)) or status))
     monkeypatch.setattr(uvc_controls,'reset',lambda:(calls.append('reset') or status))
-    assert client.get('/api/camera/controls').json()==status
-    assert client.put('/api/camera/controls',json={'mode':'manual','exposure_100us':100,'gain':5}).json()==status
+    initial=client.get('/api/camera/controls').json()
+    assert initial['saved'] is None
+    assert {key:value for key,value in initial.items() if key!='saved'}==status
+    applied=client.put('/api/camera/controls',json={'mode':'manual','exposure_100us':100,'gain':5}).json()
     assert calls[-1]==('manual',100,5)
+    assert {key:value for key,value in applied.items() if key!='saved'}==status
+    assert applied['saved']=={'mode':'manual','exposure_100us':100,'gain':5}
+    assert json.loads((DATA/'camera_controls.json').read_text())==applied['saved']
     assert client.put('/api/camera/controls',json={'mode':'manual','gain':-1}).status_code==422
-    assert client.post('/api/camera/controls/reset').json()==status
-    assert calls[-1]=='reset'
+    reset=client.post('/api/camera/controls/reset').json()
+    assert calls[-1]=='reset' and reset['saved'] is None
+    assert not (DATA/'camera_controls.json').exists()
     def unavailable():raise UvcControlError('相机没有开放曝光控制。')
     monkeypatch.setattr(uvc_controls,'status',unavailable)
     assert client.get('/api/camera/controls').status_code==409
 
 
-def test_map_and_inverse_transform_units(client):
-    assert client.put('/api/intrinsics',json=SIM_INTRINSICS.model_dump()).status_code==200
-    T=np.eye(4);T[0,3]=1000
-    bad=T.copy();bad[0,0]=2
-    assert client.put('/api/map',json={'markers':[{'id':1,'T_world_marker':bad.tolist()}]}).status_code==422
-    robot=np.eye(4);robot[2,3]=50
-    assert client.put('/api/map',json={'markers':[{'id':1,'T_world_marker':T.tolist()}],'T_camera_robot':robot.tolist()}).status_code==200
+def test_saved_exposure_is_reapplied_when_camera_starts(client,monkeypatch):
+    from backend.app import DATA,camera,uvc_controls
+    from backend.uvc_controls import UvcControlError
+    status={'device':{'name':'USB 2.0 Camera'},'mode':'manual',
+            'exposure_100us':{'current_value':120},'gain':{'current_value':7}}
+    monkeypatch.setattr(uvc_controls,'apply',lambda mode,exposure,gain:status)
+    assert client.put('/api/camera/controls',json={'mode':'manual','exposure_100us':120,'gain':7}).status_code==200
+    applied=[]
+    monkeypatch.setattr(uvc_controls,'apply',lambda mode,exposure,gain:(applied.append((mode,exposure,gain)) or status))
+    monkeypatch.setattr(camera,'start',lambda options:{'running':True,'device':{'index':0,'width':1280,'height':720}})
+    restored=client.post('/api/camera/start',json={})
+    assert restored.status_code==200
+    assert restored.json()['controls']=={'restored':True,'mode':'manual','exposure_100us':120,'gain':7}
+    assert applied==[('manual',120,7)]
+    def unavailable(mode,exposure,gain):raise UvcControlError('未找到 USB 相机')
+    monkeypatch.setattr(uvc_controls,'apply',unavailable)
+    failed=client.post('/api/camera/start',json={}).json()
+    assert failed['running'] and failed['controls']=={'restored':False,'error':'未找到 USB 相机'}
+    monkeypatch.setattr(uvc_controls,'reset',lambda:status)
+    client.post('/api/camera/controls/reset')
+    assert not (DATA/'camera_controls.json').exists()
+
+
+def test_relative_pose_units_and_no_world_map_api(client):
     frame,_=render_simulation(Simulation(),DetectorConfig())
-    packet=client.post('/api/detect',files=as_upload(frame),data={'include_images':'true'}).json()
+    response=client.post('/api/v1/detect',files=as_detect_upload(frame),
+                         data={'include_images':'true','intrinsics':json.dumps(SIM_INTRINSICS.model_dump())})
+    assert response.status_code==200
+    packet=response.json()
     pose=packet['markers'][0]['pose']
-    assert np.allclose(pose['T_world_camera'],T@np.array(pose['T_marker_camera']))
-    assert np.allclose(pose['camera_position_world_mm'],np.array(pose['T_world_camera'])[:3,3])
-    assert np.allclose(pose['camera_position_world_cm'],np.array(pose['camera_position_world_mm'])/10)
     assert np.allclose(pose['camera_position_marker_cm'],np.array(pose['camera_position_marker_mm'])/10)
+    assert np.allclose(pose['tvec_cm'],np.array(pose['tvec_mm'])/10)
     assert np.isclose(pose['distance_cm'],pose['distance_mm']/10)
-    assert np.allclose(pose['T_world_robot'],np.array(pose['T_world_camera'])@robot)
-    assert np.allclose(pose['robot_position_world_mm'],np.array(pose['T_world_robot'])[:3,3])
+    assert np.allclose(np.array(pose['T_camera_marker'])@np.array(pose['T_marker_camera']),np.eye(4),atol=1e-6)
+    assert not any(key.startswith(('camera_position_world','robot_position_world','T_world','approximate_')) for key in pose)
     assert set(packet['images'])=={'raw','binary','glow','blobs'}
-    assert client.delete('/api/intrinsics').status_code==200
-    assert client.put('/api/map',json={'markers':[],'T_camera_robot':None}).status_code==200
-
-
-def test_marker_xyz_and_axis_angles_set_world_xy_without_erasing_robot_extrinsics(client):
-    assert client.put('/api/intrinsics',json=SIM_INTRINSICS.model_dump()).status_code==200
-    robot=np.eye(4);robot[0,3]=75
-    assert client.put('/api/map',json={'markers':[],'T_camera_robot':robot.tolist()}).status_code==200
-    fields={'id':1,'x_mm':1000,'y_mm':2000,'z_mm':3000,
-            'yaw_deg':90,'pitch_deg':0,'roll_deg':0}
-    response=client.put('/api/map/marker-pose',json=fields)
-    assert response.status_code==200,response.text
-    T=np.array(response.json()['map']['markers'][0]['T_world_marker'])
-    assert np.allclose(T[:3,:3],[[0,-1,0],[1,0,0],[0,0,1]],atol=1e-12)
-    assert np.allclose(T[:3,3],[1000,2000,3000])
-    assert np.allclose(response.json()['map']['T_camera_robot'],robot)
-    saved=client.get('/api/map/marker-poses').json()[0]
-    assert all(abs(saved[k]-v)<1e-8 for k,v in fields.items())
-    assert [saved['x_cm'],saved['y_cm'],saved['z_cm']]==[100,200,300]
-    cm_fields={'id':1,'x_cm':100,'y_cm':200,'z_cm':300,'yaw_deg':90}
-    assert client.put('/api/map/marker-pose',json=cm_fields).status_code==200
-    assert np.allclose(client.get('/api/config').json()['map']['markers'][0]['T_world_marker'],T)
-    assert client.put('/api/map/marker-pose',json={**cm_fields,'x_mm':999}).status_code==422
-    frame,_=render_simulation(Simulation(marker_id=1),DetectorConfig())
-    packet=client.post('/api/detect',files=as_upload(frame)).json()
-    pose=packet['markers'][0]['pose']
-    expected=T@np.array(pose['T_marker_camera'])
-    assert np.allclose(pose['camera_position_world_mm'],expected[:3,3])
-    assert np.allclose(pose['robot_position_world_mm'],(expected@robot)[:3,3])
-    tilted={**fields,'pitch_deg':20,'roll_deg':-30}
-    assert client.put('/api/map/marker-pose',json=tilted).status_code==200
-    readback=client.get('/api/map/marker-poses').json()[0]
-    assert all(abs(readback[k]-v)<1e-8 for k,v in tilted.items())
-    assert client.delete('/api/map/marker-pose/1').status_code==200
-    assert client.get('/api/map/marker-poses').json()==[]
-    assert client.get('/api/config').json()['map']['T_camera_robot']==robot.tolist()
-    assert client.put('/api/map',json={'markers':[],'T_camera_robot':None}).status_code==200
-    assert client.delete('/api/intrinsics').status_code==200
-
-
-def test_world_xy_is_withheld_for_corrected_or_geometrically_weak_id():
-    from backend.app import add_world_poses
-    from backend.models import MapConfig,MapEntry
-    marker_map=MapConfig(markers=[MapEntry(id=1,T_world_marker=np.eye(4).tolist())])
-    base={'id':1,'pose_status':'valid','hamming_distance':0,'grid_rms_px':1.,
-          'pose':{'T_marker_camera':np.eye(4).tolist(),'reprojection_rms_px':1.}}
-    for changed in ({'hamming_distance':1},{'grid_rms_px':3.},
-                    {'pose':{**base['pose'],'reprojection_rms_px':3.}}):
-        marker={**base,**changed}
-        result=add_world_poses({'markers':[marker]},marker_map)
-        assert result['markers'][0]['world_position_status']=='geometry_rejected'
-        assert 'camera_position_world_mm' not in result['markers'][0]['pose']
-    clean=add_world_poses({'markers':[base.copy()]},marker_map)['markers'][0]
-    assert clean['world_position_status']=='valid'
-    assert clean['pose']['camera_position_world_mm']==[0.,0.,0.]
-    edge={**base,'pose_status':'approximate','pose':{'T_marker_camera':np.eye(4).tolist(),'reprojection_rms_px':17.8}}
-    candidate=add_world_poses({'markers':[edge]},marker_map)['markers'][0]
-    assert candidate['world_position_status']=='approximate'
-    assert candidate['pose']['approximate_camera_position_world_mm']==[0.,0.,0.]
-    assert 'camera_position_world_mm' not in candidate['pose']
+    assert 'map' not in client.get('/api/config').json()
+    assert client.put('/api/map',json={'markers':[]}).status_code==404
+    assert client.get('/api/map/marker-poses').status_code==404
 
 
 def test_calibration_view_rejects_non_chessboard(client):
@@ -247,7 +222,7 @@ def test_live_chessboard_no_camera_is_clear_and_does_not_add_views(client,monkey
     assert client.get('/assets/calibration.js').status_code==200
 
 
-def test_new_ids_available_in_family_exports_simulator_and_map(client):
+def test_new_ids_available_in_family_exports_and_simulator(client):
     family=client.get('/api/family').json()
     assert family['marker_count']==18 and len(family['markers'])==18
     assert 'profiles' not in family
@@ -255,6 +230,3 @@ def test_new_ids_available_in_family_exports_simulator_and_map(client):
     assert client.get('/api/family/19/svg').status_code==422
     packet=client.post('/api/simulate',json={'marker_id':18}).json()
     assert packet['markers'][0]['id']==18
-    T=np.eye(4).tolist()
-    assert client.put('/api/map',json={'markers':[{'id':18,'T_world_marker':T}]}).status_code==200
-    client.put('/api/map',json={'markers':[]})

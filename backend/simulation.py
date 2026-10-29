@@ -1,8 +1,9 @@
 """Independent 3D projection/rasterizer; detector never receives synthetic labels."""
 import cv2
 import numpy as np
-from .family import grid, CODES
-from .models import DetectorConfig, Intrinsics, Simulation
+from star16.family import grid, CODES
+from star16.models import DetectorConfig, Intrinsics
+from .models import Simulation
 
 SIM_INTRINSICS = Intrinsics(width=960, height=600, fx=1000, fy=1000, cx=480, cy=300,
                             calibrated=True, source='synthetic_ground_truth', distortion=[0., 0., 0., 0., 0.])

@@ -1,9 +1,10 @@
 import cv2
 import numpy as np
 import pytest
-from backend.detector import detect
-from backend.family import grid,CODES
-from backend.models import DetectorConfig,Simulation,Intrinsics
+from star16.detector import detect
+from star16.family import grid,CODES
+from star16.models import DetectorConfig,Intrinsics
+from backend.models import Simulation
 from backend.simulation import SIM_INTRINSICS,render_simulation
 
 
@@ -52,6 +53,56 @@ def test_edge_fallback_preserves_exact_id_and_labels_approximate_pose():
     result,_=detect(multiple,cfg,intr)
     assert len(result['markers'])==2
     assert sum(m.get('geometry_source')=='raw_image' for m in result['markers'])==1
+
+
+def test_refined_ippe_candidates_that_collapse_are_not_ambiguous():
+    # A real near-frontal ID 002 frame. Both raw IPPE roots fit similarly, but
+    # LM converges them to one pose; the ambiguity flag must use refined roots.
+    from star16.detector import _pose
+    cells=[(3,0),(0,3),(0,0),(3,3),(3,2),(2,1),(2,3),(0,1),(2,0),(1,2)]
+    image_points=np.array([
+        [750.4614784039261,375.31536681259234],[530.1763638562961,144.49579654046207],
+        [525.4430381746935,371.996065604854],[755.19157465325,150.08999456078325],
+        [753.7782012415187,225.23588855204272],[677.4421388372764,298.58434676451054],
+        [680.6179289562269,147.9661702013166],[527.2406998499374,295.8941906706941],
+        [675.6828033343625,374.29428836060515],[604.1581002779106,222.28125283813975],
+    ],np.float64)
+    obj=np.array([[(c-1.5)*40,(r-1.5)*40,0] for r,c in cells],np.float64)
+    K=np.array([[1350.509176089129,0,775.9899073832961],
+                [0,1369.848602769441,273.689910414317],
+                [0,0,1.]])
+    dist=np.array([.08427692296001213,-.5771195397521105,.004364548260613208,
+                   .004585729516456204,2.2353418726664502])
+    pose=_pose(obj,image_points,K,dist,2.5)
+    assert pose is not None
+    assert pose['candidate_angle_separation_deg']>3
+    assert pose['refined_candidate_angle_separation_deg']<.01
+    assert np.allclose(pose['refined_candidate_rms_px'],pose['reprojection_rms_px'],atol=1e-6)
+    assert pose['reprojection_rms_px']<.5
+    assert pose['ambiguous'] is False
+
+
+def test_refined_ippe_candidates_that_stay_distinct_are_ambiguous():
+    # Four planar points leave a genuine second minimum after LM refinement.
+    from star16.detector import _pose
+    obj=np.array([[-20.68568462063443,-26.021373882869362,0.0],
+                  [20.68568462063443,-26.021373882869362,0.0],
+                  [20.68568462063443,26.021373882869362,0.0],
+                  [-20.68568462063443,26.021373882869362,0.0]])
+    image_points=np.array([[843.5831115092326,335.626797934009],
+                           [902.0113294282064,308.370022184317],
+                           [936.7396743373735,381.6488280347693],
+                           [877.8654349810879,409.026748851755]])
+    K=np.array([[1350.509176089129,0,775.9899073832961],
+                [0,1369.848602769441,273.689910414317],
+                [0,0,1.]])
+    dist=np.array([.08427692296001213,-.5771195397521105,.004364548260613208,
+                   .004585729516456204,2.2353418726664502])
+    pose=_pose(obj,image_points,K,dist,2.5)
+    assert pose is not None
+    assert pose['refined_candidate_rms_px'][1]-pose['refined_candidate_rms_px'][0]<.25
+    assert pose['refined_candidate_angle_separation_deg']>3
+    assert pose['ambiguous'] is True
 
 
 def test_exact_marker_with_reprojection_over_normal_limit_is_approximate():
@@ -198,7 +249,7 @@ def test_uniformly_rescaled_calibration_preserves_metric_pose():
 
 
 def test_distortion_is_removed_before_grid_decode():
-    from backend.detector import camera_matrix
+    from star16.detector import camera_matrix
     cfg=DetectorConfig()
     intr=SIM_INTRINSICS.model_copy(update={'distortion':[-.3,.08,.001,-.002,0.]})
     # Forward splat the independently projected dot centers through the distortion model.
@@ -219,7 +270,7 @@ def test_distortion_is_removed_before_grid_decode():
     [{'x':470.,'y':300.,'radius':16.},{'x':482.,'y':309.,'radius':17.}],
 ])
 def test_cropped_glow_matches_full_frame_filter(blobs):
-    from backend.detector import render_glow
+    from star16.detector import render_glow
     reference=np.zeros((600,960,3),np.uint8)
     for b in blobs:
         cv2.circle(reference,(round(b['x']),round(b['y'])),max(2,round(b['radius'])),(230,255,210),-1,cv2.LINE_AA)
