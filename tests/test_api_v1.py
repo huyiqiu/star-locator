@@ -33,6 +33,13 @@ def test_intrinsics_in_request_produce_both_pose_conventions(client):
     assert np.allclose(pose['camera_position_marker_mm'], T_marker_camera[:3, 3], atol=1e-6)
     assert np.allclose(pose['tvec_cm'], np.array(pose['tvec_mm']) / 10)
     assert np.isclose(pose['distance_mm'], np.linalg.norm(pose['tvec_mm']))
+    assert pose['candidates']
+    for candidate in pose['candidates']:
+        assert np.allclose(candidate['tvec_cm'], np.array(candidate['tvec_mm']) / 10)
+        assert np.allclose(candidate['camera_position_marker_cm'],
+                           np.array(candidate['camera_position_marker_mm']) / 10)
+        assert np.isclose(candidate['distance_cm'], candidate['distance_mm'] / 10)
+        assert np.isclose(candidate['optical_depth_cm'], candidate['optical_depth_mm'] / 10)
 
 
 def test_missing_intrinsics_ignore_saved_server_state(client):

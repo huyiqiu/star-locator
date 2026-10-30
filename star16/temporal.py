@@ -31,6 +31,14 @@ def add_centimeter_aliases(pose: dict) -> dict:
     return pose
 
 
+def _point3(value) -> np.ndarray | None:
+    try:
+        point = np.asarray(value, dtype=float)
+    except (TypeError, ValueError):
+        return None
+    return point if point.shape == (3,) and np.isfinite(point).all() else None
+
+
 @dataclass
 class _Track:
     samples: deque = field(default_factory=lambda: deque(maxlen=WINDOW))
@@ -54,15 +62,37 @@ class TemporalPoseFilter:
         ids = Counter(m['id'] for m in packet.get('markers', []))
         for marker in packet.get('markers', []):
             pose = marker.get('pose')
-            if not pose or marker.get('pose_status') not in ('valid', 'approximate') or ids[marker['id']] != 1:
+            status = marker.get('pose_status')
+            if not pose or status not in ('valid', 'approximate', 'ambiguous') or ids[marker['id']] != 1:
                 continue
+            chosen = pose
+            if status == 'ambiguous':
+                candidates = pose.get('candidates') or [pose]
+                history = self.tracks.get((marker['id'], 'camera_position_marker_mm'))
+                index, selection = 0, 'best_rms'
+                if (history is not None and history.value is not None
+                        and 0 < captured_monotonic-history.last_time <= MAX_GAP_S):
+                    # The mirrored solutions differ by roughly a metre, far more
+                    # than normal frame-to-frame motion; the nearest branch is
+                    # the one continuous with the last observed pose.
+                    best = None
+                    for i, candidate in enumerate(candidates):
+                        point = _point3(candidate.get('camera_position_marker_mm'))
+                        if point is None:
+                            continue
+                        distance = float(np.linalg.norm(point-history.value))
+                        if best is None or distance < best:
+                            best, index, selection = distance, i, 'continuity'
+                chosen = candidates[index]
+                pose['branch_selection'] = selection
+                pose['filtered_candidate_index'] = index
             filtered = {}
             for name in POSITION_FIELDS:
-                raw = pose.get(name)
+                raw = chosen.get(name)
                 if raw is None:
                     continue
-                point = np.asarray(raw, dtype=float)
-                if point.shape != (3,) or not np.isfinite(point).all():
+                point = _point3(raw)
+                if point is None:
                     continue
                 key = (marker['id'], name)
                 if smoothing_ms <= 0:

@@ -100,7 +100,8 @@
         "distance_cm": 65.0,
         "optical_depth_mm": 650.0,
         "reprojection_rms_px": 0.31,
-        "ambiguous": false
+        "ambiguous": false,
+        "candidates": [{"...": "精化候选，每项字段同 pose；candidates[0] 即顶层解"}]
       }
     }
   ],
@@ -149,13 +150,25 @@
 
 `pose` 还包含 `rvec`、`ippe_candidate_rms_px`、`candidate_angle_separation_deg`（原始 IPPE 候选诊断）、`refined_candidate_rms_px`、`refined_candidate_angle_separation_deg`（LM 精化后的候选，`ambiguous` 以此为判据）和 `point_count`。`pose=null` 时上述字段不存在。
 
+`pose.candidates` 是 LM 精化后的候选解（按重投影 RMS 升序，1–2 项），每项都带完整的 `T_camera_marker`、`T_marker_camera`、`rvec`、`tvec_mm`/`tvec_cm`、`camera_position_marker_mm`/`_cm`、`distance_mm`/`_cm`、`optical_depth_mm`/`_cm`、`reprojection_rms_px`。顶层 `pose` 等于 `candidates[0]`（最小误差解），其位姿字段与 `candidates[0]` 相同。候选数量为 2 不等于歧义，应以 `pose_status` 为准。
+
+单帧 API（`source=image`）不做分支选择，始终返回最小误差解。实时链路（UVC 与浏览器相机）会在 marker 的 `pose` 上追加：
+
+| 字段 | 含义 |
+| --- | --- |
+| `branch_selection` | `best_rms`：无可用历史，采用 `candidates[0]`；`continuity`：按上一帧 `camera_position_marker_mm` 选取最近的候选分支 |
+| `filtered_candidate_index` | 被选中的候选下标 |
+| `filtered` / `filter_status` | 对所选分支做时序滤波后的 `camera_position_marker_mm`/`_cm`、`distance_mm`/`_cm` 等；`ambiguous` 时可能与顶层 `pose` 属于不同分支 |
+
+平面双解的两个候选朝向不同、相机横向位置相差可达约 1 m，但距离只差毫米级。实时显示请优先使用 `filtered`，并同时读取 `pose_status`，不要把 `ambiguous` 当作 `valid`。
+
 ### `pose_status`
 
 | 值 | 含义 |
 | --- | --- |
 | `valid` | 通过几何门限的有效位姿 |
 | `approximate` | 完整精确解码后的宽松位姿，或原图精确解码的边缘回退位姿 |
-| `ambiguous` | 两个 IPPE 候选分别精化后仍近似等价，姿态存在平面双解 |
+| `ambiguous` | 两个 IPPE 候选分别精化后仍近似等价，姿态存在关于视线的镜像双解；仍返回 `pose` 与 `candidates`，实时链路的 `filtered` 按连续性选择分支 |
 | `calibration_required` | 无已标定内参，或内参宽高比不一致 |
 | `reprojection_rejected` | ID 可解码，但位姿未通过重投影门限 |
 

@@ -8,6 +8,19 @@ def observation(x, marker_id=1, smoothing_ms=300, status='valid'):
                                   'distance_mm': 999}}]}
 
 
+def candidate(x, rms):
+    return {'camera_position_marker_mm': [x, 20, 30], 'distance_mm': 999,
+            'reprojection_rms_px': rms}
+
+
+def ambiguous_observation(candidates, marker_id=1, smoothing_ms=300):
+    return {'config': {'temporal_smoothing_ms': smoothing_ms},
+            'markers': [{'id': marker_id, 'pose_status': 'ambiguous',
+                         'pose': {'camera_position_marker_mm': candidates[0]['camera_position_marker_mm'],
+                                  'distance_mm': 999,
+                                  'candidates': candidates}}]}
+
+
 def filtered(packet, name='camera_position_marker_mm'):
     return packet['markers'][0]['pose'].get('filtered', {}).get(name)
 
@@ -49,11 +62,69 @@ def test_first_valid_frame_gap_id_change_and_disabled_filter():
     assert off['markers'][0]['pose']['filter_status'] == 'ready'
 
 
-def test_ambiguous_pose_is_never_promoted_to_filtered_position():
+def test_ambiguous_pose_without_history_seeds_best_rms_and_outputs_filtered():
     smooth = TemporalPoseFilter()
-    for i in range(3):
-        packet = smooth.apply(observation(10, status='ambiguous'), i*.02)
-    assert 'filtered' not in packet['markers'][0]['pose']
+    packet = smooth.apply(ambiguous_observation([candidate(100, .18), candidate(900, .27)]), 0)
+    pose = packet['markers'][0]['pose']
+    assert pose['branch_selection'] == 'best_rms'
+    assert pose['filtered_candidate_index'] == 0
+    assert filtered(packet)[0] == 100
+    assert abs(pose['filtered']['distance_cm'] - 10.63014581273465) < 1e-9
+    assert pose['filter_status'] == 'ready'
+
+
+def test_ambiguous_pose_follows_nearest_candidate_regardless_of_rms_order():
+    smooth = TemporalPoseFilter()
+    smooth.apply(ambiguous_observation([candidate(100, .18), candidate(900, .27)]), 0)
+    packet = smooth.apply(ambiguous_observation([candidate(900, .10), candidate(100, .30)]), .05)
+    pose = packet['markers'][0]['pose']
+    assert (pose['branch_selection'], pose['filtered_candidate_index']) == ('continuity', 1)
+    assert filtered(packet)[0] == 100
+    packet = smooth.apply(ambiguous_observation([candidate(100, .10), candidate(900, .30)]), .10)
+    pose = packet['markers'][0]['pose']
+    assert (pose['branch_selection'], pose['filtered_candidate_index']) == ('continuity', 0)
+    assert filtered(packet)[0] == 100
+
+
+def test_ambiguous_pose_reseeds_by_best_rms_after_track_expires():
+    smooth = TemporalPoseFilter()
+    smooth.apply(ambiguous_observation([candidate(100, .18), candidate(900, .27)]), 0)
+    packet = smooth.apply(ambiguous_observation([candidate(900, .18), candidate(100, .27)]), .4)
+    pose = packet['markers'][0]['pose']
+    assert (pose['branch_selection'], pose['filtered_candidate_index']) == ('best_rms', 0)
+    assert filtered(packet)[0] == 900
+
+
+def test_ambiguous_pose_with_disabled_smoothing_outputs_chosen_candidate_only():
+    smooth = TemporalPoseFilter()
+    packet = smooth.apply(ambiguous_observation([candidate(100, .18), candidate(900, .27)],
+                                                smoothing_ms=0), 0)
+    pose = packet['markers'][0]['pose']
+    assert pose['branch_selection'] == 'best_rms'
+    assert filtered(packet)[0] == 100
+    assert pose['filter_status'] == 'ready'
+    assert not smooth.tracks
+
+
+def test_ambiguous_pose_without_candidates_falls_back_to_pose():
+    smooth = TemporalPoseFilter()
+    packet = {'config': {'temporal_smoothing_ms': 300},
+              'markers': [{'id': 1, 'pose_status': 'ambiguous',
+                           'pose': {'camera_position_marker_mm': [100, 20, 30],
+                                    'distance_mm': 999, 'ambiguous': True}}]}
+    result = smooth.apply(packet, 0)
+    pose = result['markers'][0]['pose']
+    assert (pose['branch_selection'], pose['filtered_candidate_index']) == ('best_rms', 0)
+    assert filtered(result)[0] == 100
+
+
+def test_duplicate_ambiguous_marker_ids_are_skipped():
+    smooth = TemporalPoseFilter()
+    packet = ambiguous_observation([candidate(100, .18), candidate(900, .27)])
+    packet['markers'].append(packet['markers'][0])
+    result = smooth.apply(packet, 0)
+    assert 'filtered' not in result['markers'][0]['pose']
+    assert 'branch_selection' not in result['markers'][0]['pose']
 
 
 def test_approximate_pose_filters_only_the_marker_relative_position():

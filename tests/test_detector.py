@@ -82,6 +82,38 @@ def test_refined_ippe_candidates_that_collapse_are_not_ambiguous():
     assert pose['ambiguous'] is False
 
 
+def test_far_small_marker_returns_both_mirror_candidates():
+    # A real ~2.72 m ID 002 frame. The marker spans only about 60x62 px, yet
+    # both refined solutions must still be returned instead of dropping the pose.
+    from star16.detector import _pose
+    cells=[[0,3],[3,0],[3,3],[0,0],[1,2],[2,3],[3,2],[0,1],[2,1],[2,0]]
+    image_points=np.array([
+        [912.8361,354.87],[971.4747,416.757],[972.0444,355.3838],[912.014,416.4175],
+        [932.2494,375.5244],[952.2608,355.1156],[971.7946,375.9332],[912.1665,395.5519],
+        [951.5924,395.9952],[951.9643,416.8076],
+    ],np.float64)
+    obj=np.array([[(c-1.5)*40,(r-1.5)*40,0] for r,c in cells],np.float64)
+    K=np.array([[1350.509176089129,0,775.9899073832961],
+                [0,1369.848602769441,273.689910414317],
+                [0,0,1.]])
+    dist=np.array([.08427692296001213,-.5771195397521105,.004364548260613208,
+                   .004585729516456204,2.2353418726664502])
+    pose=_pose(obj,image_points,K,dist,2.5)
+    assert pose is not None
+    assert pose['ambiguous'] is True
+    assert len(pose['candidates'])==2
+    first,second=pose['candidates']
+    assert np.linalg.norm(np.subtract(first['camera_position_marker_mm'],
+                                      second['camera_position_marker_mm']))>1000
+    assert abs(first['distance_mm']-second['distance_mm'])<10
+    assert abs(first['distance_mm']-2720)<10
+    for name,value in first.items():
+        assert pose[name]==value
+    assert pose['reprojection_rms_px']==first['reprojection_rms_px']
+    assert pose['refined_candidate_rms_px']==[first['reprojection_rms_px'],
+                                               second['reprojection_rms_px']]
+
+
 def test_refined_ippe_candidates_that_stay_distinct_are_ambiguous():
     # Four planar points leave a genuine second minimum after LM refinement.
     from star16.detector import _pose

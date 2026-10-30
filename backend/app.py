@@ -78,6 +78,8 @@ def run_detection(frame, cfg, intr, *, include_images, source='image'):
     for marker in result['markers']:
         if marker.get('pose'):
             add_centimeter_aliases(marker['pose'])
+            for candidate in marker['pose'].get('candidates', []):
+                add_centimeter_aliases(candidate)
     result.update(timestamp=time.time(), config=cfg.model_dump(), source=source,
                   intrinsics_source=intr.source if intr else None, metric_validated=bool(intr and intr.calibrated))
     encoding_started=time.perf_counter()

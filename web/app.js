@@ -1,5 +1,5 @@
 import {createCalibrationUI} from '/assets/calibration.js?v=2.0.0';
-import {TemporalPoseFilter} from '/assets/temporal.js?v=2.0.0';
+import {TemporalPoseFilter} from '/assets/temporal.js?v=2.0.1';
 const $=id=>document.getElementById(id);
 const state={source:'uvc',mode:'glow',family:null,config:null,intrinsics:null,result:null,selected:0,selectedId:null,stream:null,ws:null,running:false,session:0,lastLive:0,lastRendered:0,lastFile:null,lastImage:null,receivedAt:0,cameraOwned:false,defaultConfig:null};
 const ctx=$('viewer').getContext('2d');
@@ -60,7 +60,7 @@ function updateObservation(){
  if(state.source==='simulation')note='当前是合成演示，使用真实检测算法和已知合成内参。识别与位姿用于验证算法链路，不代表现场精度。';
  else if(!m){note=`检测到 ${state.result?.diagnostics?.blob_count||0} 个候选亮点。随机贴点可用于调试阈值与中心提取；需按基准族布局制作标记，才能解码 ID、方向与位姿。`;}
  else if(m.pose_status==='calibration_required'){note='ID 与方向已识别。请在“相机标定”中导入真实内参或完成棋盘格标定，厘米位姿随后生效。';warn=true}
- else if(m.pose_status==='ambiguous'){note='当前平面位姿存在两个近似等价解。可增加观察倾角或引入安装姿态、里程计约束，当前结果已标记为歧义。';warn=true}
+ else if(m.pose_status==='ambiguous'){const branch=pose?.branch_selection==='continuity'?'已按上一帧连续性选择分支':'已按最小重投影误差选择分支';note=`当前平面位姿存在两个关于视线镜像的近似解，两者距离仅差毫米级，但朝向与横向位置差异明显。${live?`实时显示${branch}`:'单帧结果返回最小误差解'}；横向 x 与 y 可能相差约 1 m，状态仍为“平面双解”。`;warn=true}
  else if(m.pose_status==='reprojection_rejected'){note='图案已识别，但位姿没有通过几何质量门限。请检查标定、实际点间距、反光点粘贴位置及曝光。';warn=true}
  else if(m.pose_status==='approximate'){note='点阵已精确解码，当前位姿为粗略估计。建议检查标定与反光点位置，并仅将其作为参考。';warn=true}
  else note=`已输出相机光心相对标记 ID ${String(m.id).padStart(3,'0')} 的位姿。世界坐标与机器人坐标请由集成应用自行变换。`;

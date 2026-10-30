@@ -148,6 +148,19 @@ def _refine_pose(obj, img, K, dist, rvec, tvec):
     return (rms, rvec, tvec) if np.isfinite(rms) else None
 
 
+def _pose_fields(rms, rvec, tvec):
+    R = cv2.Rodrigues(rvec)[0]
+    T = np.eye(4)
+    T[:3, :3], T[:3, 3] = R, tvec.ravel()
+    inverse = np.eye(4)
+    inverse[:3, :3], inverse[:3, 3] = R.T, -R.T@tvec.ravel()
+    return {'T_camera_marker': T.tolist(), 'T_marker_camera': inverse.tolist(),
+            'rvec': rvec.ravel().tolist(), 'tvec_mm': tvec.ravel().tolist(),
+            'camera_position_marker_mm': inverse[:3, 3].tolist(),
+            'distance_mm': float(np.linalg.norm(tvec)), 'optical_depth_mm': float(tvec[2, 0]),
+            'reprojection_rms_px': rms}
+
+
 def _pose(obj, img, K, dist, max_error):
     try:
         result = cv2.solvePnPGeneric(obj, img, K, dist, flags=cv2.SOLVEPNP_IPPE)
@@ -189,21 +202,15 @@ def _pose(obj, img, K, dist, max_error):
     ambiguous = (len(refined_candidates) > 1
                  and refined_candidates[1][0]-rms < .25
                  and rotation_separation > 3)
-    R = cv2.Rodrigues(rvec)[0]
-    T = np.eye(4)
-    T[:3, :3], T[:3, 3] = R, tvec.ravel()
-    inverse = np.eye(4)
-    inverse[:3, :3], inverse[:3, 3] = R.T, -R.T@tvec.ravel()
-    return {'T_camera_marker': T.tolist(), 'T_marker_camera': inverse.tolist(),
-            'rvec': rvec.ravel().tolist(), 'tvec_mm': tvec.ravel().tolist(),
-            'camera_position_marker_mm': inverse[:3, 3].tolist(),
-            'distance_mm': float(np.linalg.norm(tvec)), 'optical_depth_mm': float(tvec[2, 0]),
-            'reprojection_rms_px': rms, 'ambiguous': bool(ambiguous),
-            'ippe_candidate_rms_px': [c[0] for c in raw_candidates],
-            'candidate_angle_separation_deg': raw_separation,
-            'refined_candidate_rms_px': [c[0] for c in refined_candidates],
-            'refined_candidate_angle_separation_deg': rotation_separation,
-            'point_count': len(obj)}
+    candidates = [_pose_fields(*c) for c in refined_candidates]
+    pose = dict(candidates[0])
+    pose.update({'ambiguous': bool(ambiguous),
+                 'ippe_candidate_rms_px': [c[0] for c in raw_candidates],
+                 'candidate_angle_separation_deg': raw_separation,
+                 'refined_candidate_rms_px': [c[0] for c in refined_candidates],
+                 'refined_candidate_angle_separation_deg': rotation_separation,
+                 'point_count': len(obj), 'candidates': candidates})
+    return pose
 
 
 def render_glow(height, width, blobs):
